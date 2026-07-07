@@ -1,0 +1,4 @@
+interface:
+  display_name: "Translate Subtitles"
+  short_description: "Translate SRT via text extraction"
+  default_prompt: "Use $translate-subtitles to translate this subtitle file to Chinese."
