@@ -1,4 +1,4 @@
 interface:
   display_name: "Proofread Subtitles"
-  short_description: "Proofread SRT via text extraction"
-  default_prompt: "Use $proofread-subtitles to correct ASR errors in this subtitle file."
+  short_description: "Text-only SRT proofreading via extraction"
+  default_prompt: "Use $proofread-subtitles to correct ASR errors in this subtitle file from extracted text only."

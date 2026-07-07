@@ -13,6 +13,8 @@ wheels/
 .pytest_cache/
 .ruff_cache/
 .subtitle-gen-cache/
+.codex/tmp/
+.codex/work/
 
 # Local configuration
 config.toml

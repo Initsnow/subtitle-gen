@@ -1,6 +1,6 @@
 ---
 name: translate-subtitles
-description: Translate subtitle files while preserving timing and subtitle structure. Use when asked to 翻译字幕, produce translated or bilingual SRT subtitles, translate generated subtitle outputs, or adapt subtitle text to a target language without merging, splitting, reordering, or retiming cues; prefer the project SRT text extraction/apply script to avoid spending tokens on timestamps.
+description: Text-only subtitle translation. Use when asked to 翻译字幕, produce translated or bilingual SRT subtitles, translate generated subtitle outputs, or adapt subtitle text to a target language. For SRT, work through the project extract/apply script instead of reading raw timestamped content.
 ---
 
 # Translate Subtitles
@@ -8,8 +8,9 @@ description: Translate subtitle files while preserving timing and subtitle struc
 ## Workflow
 
 1. Determine source and target languages from the request or file context; ask only if the target language is truly ambiguous.
-2. For SRT files, run `.codex/scripts/srt_text.py` to extract cue text before translation; do not load timestamps into the prompt unless timing is relevant.
-3. Translate cue by cue with surrounding context. Do not merge, split, remove, reorder, or retime cues unless explicitly requested.
+2. For SRT files, extract JSONL first; do not read raw SRT content for translation.
+3. Translate from extracted text and neighboring cues only. Do not browse, inspect transcripts, or open media unless the user explicitly asks for source verification.
+4. Translate each JSONL `text` value and keep its `id`.
 
 ## SRT Text Script
 
@@ -21,17 +22,21 @@ uv run python .codex/scripts/srt_text.py apply input.srt translated.jsonl output
 uv run python .codex/scripts/srt_text.py apply input.srt translated.jsonl output.bilingual.srt --mode bilingual
 ```
 
-Translate only the `text` value and preserve every `id`:
+Edit JSONL records like this:
 
 ```jsonl
 {"id":1,"text":"Translated subtitle text."}
 ```
 
-Use `--format text` for pure transcript context, or `--format tsv` for compact id/text data. For long files, translate contiguous id ranges in batches, then concatenate the translated JSONL before applying.
+Apply requires all cue ids by default. Do not use `--allow-partial` for translation outputs: partial apply can silently mix source-language cues into the translated SRT. For long files, translate contiguous ranges in separate JSONL files, then concatenate one complete translated JSONL before applying.
+
+Use `--format text` for transcript context, or `--format tsv` for compact id/text data. Keep scratch files under `.codex/work/`.
+
+Reading raw SRT is only for parser or encoding diagnostics. After diagnosis, return to the extract/translate/apply flow.
 
 ## Style Rules
 
 - Translate meaning, not word order; avoid over-literal phrasing.
 - Keep repeated terms and proper nouns consistent across the file.
 - Preserve intentional slang, register, jokes, and emotional intensity when possible.
-- If a source line is likely an ASR error, make the best context-aware translation and mention any material uncertainty in the final note.
+- If a source line is likely an ASR error, make the best local context-aware translation and mention any material uncertainty in the final note.
