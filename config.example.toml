@@ -1,0 +1,60 @@
+# Minimal configuration. Advanced defaults are shown commented out so normal use stays simple.
+cache_dir = ".subtitle-gen-cache"
+
+[model]
+asr_model = "Qwen/Qwen3-ASR-1.7B-hf"
+low_vram_asr_model = "Qwen/Qwen3-ASR-0.6B-hf"
+aligner_model = "Qwen/Qwen3-ForcedAligner-0.6B-hf"
+device_map = "auto"
+dtype = "auto"
+# language = "English"
+
+[vad]
+enabled = true
+backend = "silero"
+
+# short_audio_threshold = 180.0
+# min_speech_duration = 0.25
+# min_silence_duration = 0.6
+# speech_padding = 0.25
+# max_chunk_duration = 120.0
+# hard_max_chunk_duration = 240.0
+# skip_silence_longer_than = 8.0
+
+[segment]
+mode = "hybrid"
+
+# These limits are used by mode = "local", and for deciding which local
+# segments are overlong in mode = "hybrid".
+# min_duration = 0.833
+# max_duration = 7.0
+# max_lines = 2
+# max_chars_en = 42
+# max_chars_zh = 16
+# max_chars_ja = 13
+# max_cps_en = 20.0
+# max_cps_zh = 9.0
+# max_cps_ja = 4.0
+# pause_threshold = 0.65
+
+[cache]
+enabled = true
+cleanup_enabled = true
+max_media_entries = 12
+
+[performance]
+compile_aligner = true
+compile_asr = false
+
+[llm]
+model = "deepseek-v4-flash"
+base_url = "https://api.deepseek.com/v1"
+api_key = ""
+timeout = 120.0
+max_retries = 2
+temperature = 0.5
+batch_size = 40
+concurrency = 400
+
+[output]
+default_formats = ["srt"]
