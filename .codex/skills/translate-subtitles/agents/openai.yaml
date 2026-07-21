@@ -1,4 +1,4 @@
 interface:
   display_name: "Translate Subtitles"
-  short_description: "Text-only SRT translation via extraction"
+  short_description: "Text-only SRT translation without external APIs"
   default_prompt: "Use $translate-subtitles to translate this subtitle file to Chinese from extracted text only."

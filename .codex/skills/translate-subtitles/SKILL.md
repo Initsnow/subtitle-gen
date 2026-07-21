@@ -1,6 +1,6 @@
 ---
 name: translate-subtitles
-description: Text-only subtitle translation. Use when asked to 翻译字幕, produce translated or bilingual SRT subtitles, translate generated subtitle outputs, or adapt subtitle text to a target language. For SRT, work through the project extract/apply script instead of reading raw timestamped content.
+description: Text-only subtitle translation without external translation APIs. Use when asked to 翻译字幕, produce translated or bilingual SRT subtitles, translate generated subtitle outputs, or adapt subtitle text to a target language. For SRT, work through the project extract/apply script instead of reading raw timestamped content, and do not invoke remote LLM/API translation tools.
 ---
 
 # Translate Subtitles
@@ -10,7 +10,12 @@ description: Text-only subtitle translation. Use when asked to 翻译字幕, pro
 1. Determine source and target languages from the request or file context; ask only if the target language is truly ambiguous.
 2. For SRT files, extract JSONL first; do not read raw SRT content for translation.
 3. Translate from extracted text and neighboring cues only. Do not browse, inspect transcripts, or open media unless the user explicitly asks for source verification.
-4. Translate each JSONL `text` value and keep its `id`.
+4. Translate directly in the active Codex turn by editing JSONL text. Do not call project translator code, configured `[llm]` settings, OpenAI-compatible clients, DeepSeek/OpenAI/other remote APIs, web translation services, `curl` network calls, or any additional remote LLM for translation.
+5. Translate each JSONL `text` value and keep its `id`.
+
+## Remote LLM/API Ban
+
+Remote translation is prohibited for this skill. Treat repository LLM configuration as unrelated to subtitle-skill work. If the file is long, translate contiguous JSONL ranges manually and concatenate one complete translated JSONL; do not outsource batches to a remote service.
 
 ## SRT Text Script
 
