@@ -53,8 +53,9 @@ api_key = ""
 timeout = 120.0
 max_retries = 2
 temperature = 0.5
-thinking = true
-thinking_effort = "xhigh"
+thinking = false
+# thinking = true
+# thinking_effort = "xhigh"
 batch_size = 3000
 concurrency = 400
 
