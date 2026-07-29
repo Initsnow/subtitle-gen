@@ -1,10 +1,13 @@
 from __future__ import annotations
 
 import re
+import time
 from types import TracebackType
 
-from rich.console import Console
+from rich.console import Console, RenderableType
+from rich.live import Live
 from rich.markup import escape
+from rich.panel import Panel
 from rich.progress import (
     BarColumn,
     MofNCompleteColumn,
@@ -14,6 +17,7 @@ from rich.progress import (
     TimeElapsedColumn,
     TimeRemainingColumn,
 )
+from rich.text import Text
 
 
 _AUDIO_SUMMARY_RE = re.compile(
@@ -331,7 +335,73 @@ class RichProgressReporter:
                 detail=escape(f"{self._translation_total}/{self._translation_total}"),
             )
 
+    def stream_context(self, label: str = "") -> StreamDisplay:
+        """Return a context manager that pauses progress and shows live LLM output."""
+        return StreamDisplay(self, label)
+
     def _complete_all_tasks(self) -> None:
         self._complete_all_chunks()
         self._complete_llm_task()
         self._complete_translation_task()
+
+
+class StreamDisplay:
+    """A live-updating panel that shows streaming LLM output."""
+
+    MAX_VISIBLE_CHARS = 800
+
+    def __init__(self, reporter: RichProgressReporter, label: str = "") -> None:
+        self._reporter = reporter
+        self._label = label
+        self._content = ""
+        self._chunks = 0
+        self._start_time = 0.0
+        self._live: Live | None = None
+
+    def __enter__(self) -> StreamDisplay:
+        self._reporter.stop()
+        self._content = ""
+        self._chunks = 0
+        self._start_time = time.time()
+        self._live = Live(
+            self._render(),
+            console=self._reporter.console,
+            refresh_per_second=15,
+            transient=False,
+        )
+        self._live.start()
+        return self
+
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc: BaseException | None,
+        traceback: TracebackType | None,
+    ) -> bool:
+        if self._live is not None:
+            self._live.stop()
+            self._live = None
+        self._reporter.start()
+        return False
+
+    def on_token(self, token: str) -> None:
+        self._content += token
+        self._chunks += 1
+        if self._live is not None:
+            self._live.update(self._render())
+
+    def _render(self) -> RenderableType:
+        elapsed = time.time() - self._start_time
+        display = self._content
+        if len(display) > self.MAX_VISIBLE_CHARS:
+            display = "…" + display[-(self.MAX_VISIBLE_CHARS - 1):]
+
+        header = f"[bold cyan]LLM[/] · {self._label}" if self._label else "[bold cyan]LLM[/]"
+        subtitle = f"{self._chunks} chunks · {elapsed:.1f}s"
+        return Panel(
+            Text(display, no_wrap=False),
+            title=header,
+            subtitle=subtitle,
+            border_style="cyan",
+            padding=(0, 1),
+        )

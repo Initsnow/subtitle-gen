@@ -7,6 +7,7 @@ import re
 import time
 import urllib.error
 import urllib.request
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
@@ -23,18 +24,31 @@ class LLMResponse:
     parsed: Any
 
 
+StreamCallback = Callable[[str], None]
+
+
 class OpenAICompatibleLLM:
     def __init__(self, config: LLMConfig | None = None) -> None:
         self.config = config or LLMConfig()
 
-    def complete_json(self, system_prompt: str, payload: Any) -> LLMResponse:
-        content = self.complete_text(system_prompt, json.dumps(payload, ensure_ascii=False))
+    def complete_json(
+        self, system_prompt: str, payload: Any, on_token: StreamCallback | None = None
+    ) -> LLMResponse:
+        content = self.complete_text(
+            system_prompt, json.dumps(payload, ensure_ascii=False), on_token=on_token
+        )
         return LLMResponse(content=content, parsed=parse_json_content(content))
 
-    async def complete_json_async(self, system_prompt: str, payload: Any) -> LLMResponse:
-        return await asyncio.to_thread(self.complete_json, system_prompt, payload)
+    async def complete_json_async(
+        self, system_prompt: str, payload: Any, on_token: StreamCallback | None = None
+    ) -> LLMResponse:
+        return await asyncio.to_thread(
+            self.complete_json, system_prompt, payload, on_token=on_token
+        )
 
-    def complete_text(self, system_prompt: str, user_prompt: str) -> str:
+    def complete_text(
+        self, system_prompt: str, user_prompt: str, on_token: StreamCallback | None = None
+    ) -> str:
         model = env_llm_model(self.config)
         if not model:
             raise LLMError(
@@ -56,13 +70,21 @@ class OpenAICompatibleLLM:
             body["thinking"] = {"type": "enabled"}
         if self.config.thinking_effort is not None:
             body["reasoning_effort"] = self.config.thinking_effort
-        return self._post_chat_completions(body, api_key)
+        return self._post_chat_completions(body, api_key, on_token=on_token)
 
-    async def complete_text_async(self, system_prompt: str, user_prompt: str) -> str:
-        return await asyncio.to_thread(self.complete_text, system_prompt, user_prompt)
+    async def complete_text_async(
+        self, system_prompt: str, user_prompt: str, on_token: StreamCallback | None = None
+    ) -> str:
+        return await asyncio.to_thread(
+            self.complete_text, system_prompt, user_prompt, on_token=on_token
+        )
 
-    def _post_chat_completions(self, body: dict[str, Any], api_key: str) -> str:
+    def _post_chat_completions(
+        self, body: dict[str, Any], api_key: str, on_token: StreamCallback | None = None
+    ) -> str:
         url = self.config.base_url.rstrip("/") + "/chat/completions"
+        if on_token is not None:
+            body = {**body, "stream": True}
         encoded = json.dumps(body).encode("utf-8")
         headers = {
             "Authorization": f"Bearer {api_key}",
@@ -75,8 +97,10 @@ class OpenAICompatibleLLM:
             request = urllib.request.Request(url, data=encoded, headers=headers, method="POST")
             try:
                 with urllib.request.urlopen(request, timeout=self.config.timeout) as response:
-                    data = json.loads(response.read().decode("utf-8"))
-                return str(data["choices"][0]["message"]["content"])
+                    if on_token is None:
+                        data = json.loads(response.read().decode("utf-8"))
+                        return str(data["choices"][0]["message"]["content"])
+                    return _read_sse_stream(response, on_token)
             except urllib.error.HTTPError as exc:
                 last_error = exc
                 last_error_message = _format_http_error(exc)
@@ -142,6 +166,31 @@ def _read_error_body(exc: urllib.error.HTTPError, max_chars: int = 600) -> str:
     if len(body) > max_chars:
         return f"{body[:max_chars]}..."
     return body
+
+
+def _read_sse_stream(response: Any, on_token: StreamCallback) -> str:
+    """Read SSE stream and call on_token for each content delta. Returns accumulated content text."""
+    accumulated: list[str] = []
+    for line in response:
+        decoded = line.decode("utf-8").strip()
+        if not decoded.startswith("data: "):
+            continue
+        data_str = decoded[6:]
+        if data_str == "[DONE]":
+            break
+        try:
+            chunk = json.loads(data_str)
+            delta = chunk.get("choices", [{}])[0].get("delta", {})
+            text = delta.get("content", "")
+            reasoning = delta.get("reasoning_content", "")
+            if reasoning:
+                on_token(reasoning)
+            if text:
+                on_token(text)
+                accumulated.append(text)
+        except json.JSONDecodeError:
+            continue
+    return "".join(accumulated)
 
 
 def _format_exception(exc: Exception) -> str:

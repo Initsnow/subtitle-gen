@@ -4,7 +4,7 @@ from collections.abc import Callable
 from typing import Any
 
 from .config import LLMConfig
-from .llm import OpenAICompatibleLLM
+from .llm import OpenAICompatibleLLM, StreamCallback
 from .types import SubtitleItem
 
 
@@ -38,11 +38,15 @@ class SubtitleTranslator:
         translated: list[SubtitleItem] = []
         batches = _batched(items, self.config.batch_size)
         for index, batch in enumerate(batches, start=1):
-            _report(
-                self.progress,
-                f"translation batch {index}/{len(batches)} ({len(batch)} subtitle(s))",
-            )
-            translations = self._translate_batch(batch, target_language)
+            label = f"Translate batch {index}/{len(batches)} ({len(batch)} items)"
+            with _stream(self.progress, label) as stream:
+                _report(
+                    self.progress,
+                    f"translation batch {index}/{len(batches)} ({len(batch)} subtitle(s))",
+                )
+                translations = self._translate_batch(
+                    batch, target_language, on_token=stream.on_token
+                )
             translated.extend(
                 item.with_translation(translations.get(item.id)) for item in batch
             )
@@ -52,6 +56,7 @@ class SubtitleTranslator:
         self,
         items: list[SubtitleItem],
         target_language: str,
+        on_token: StreamCallback | None = None,
     ) -> dict[int, str]:
         payload = {
             "target_language": target_language,
@@ -63,7 +68,7 @@ class SubtitleTranslator:
             ],
             "items": [{"i": item.id, "t": item.proofread or item.text} for item in items],
         }
-        response = self.llm.complete_json(TRANSLATION_SYSTEM_PROMPT, payload)
+        response = self.llm.complete_json(TRANSLATION_SYSTEM_PROMPT, payload, on_token=on_token)
         translations = validate_translation_output(response.parsed, [item.id for item in items])
         if translations is None:
             raise TranslationError("LLM translation output failed id validation.")
@@ -91,6 +96,25 @@ def validate_translation_output(raw_output: Any, expected_ids: list[int]) -> dic
     if actual_ids != expected_ids:
         return None
     return translations
+
+
+class _NoopStream:
+    def __enter__(self) -> _NoopStream:
+        return self
+
+    def __exit__(self, *args: object) -> bool:
+        return False
+
+    @staticmethod
+    def on_token(token: str) -> None:
+        pass
+
+
+def _stream(progress: ProgressCallback | None, label: str) -> _NoopStream:
+    factory = getattr(progress, "stream_context", None)
+    if factory is not None:
+        return factory(label)  # type: ignore[return-value]
+    return _NoopStream()
 
 
 def _batched(items: list[SubtitleItem], batch_size: int) -> list[list[SubtitleItem]]:

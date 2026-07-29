@@ -4,7 +4,7 @@ from collections.abc import Callable
 from typing import Any
 
 from .config import LLMConfig
-from .llm import OpenAICompatibleLLM
+from .llm import OpenAICompatibleLLM, StreamCallback
 from .types import SubtitleItem
 
 
@@ -39,11 +39,10 @@ class SubtitleProofreader:
         corrected: list[SubtitleItem] = []
         batches = _batched(items, self.config.batch_size)
         for index, batch in enumerate(batches, start=1):
-            _report(
-                self.progress,
-                f"proofreading batch {index}/{len(batches)} ({len(batch)} subtitle(s))",
-            )
-            corrections = self._proofread_batch(batch)
+            label = f"Proofread batch {index}/{len(batches)} ({len(batch)} items)"
+            with _stream(self.progress, label) as stream:
+                _report(self.progress, f"proofreading batch {index}/{len(batches)} ({len(batch)} subtitle(s))")
+                corrections = self._proofread_batch(batch, on_token=stream.on_token)
             corrected.extend(
                 item.with_proofread(corrections[item.id]) if item.id in corrections else item
                 for item in batch
@@ -53,6 +52,7 @@ class SubtitleProofreader:
     def _proofread_batch(
         self,
         items: list[SubtitleItem],
+        on_token: StreamCallback | None = None,
     ) -> dict[int, str]:
         payload: dict[str, Any] = {
             "requirements": [
@@ -63,7 +63,7 @@ class SubtitleProofreader:
             ],
             "items": [{"i": item.id, "t": item.text} for item in items],
         }
-        response = self.llm.complete_json(PROOFREAD_SYSTEM_PROMPT, payload)
+        response = self.llm.complete_json(PROOFREAD_SYSTEM_PROMPT, payload, on_token=on_token)
         corrections = _validate_proofread_output(response.parsed, [item.id for item in items])
         if corrections is None:
             raise ProofreadError("LLM proofread output failed id validation.")
@@ -96,6 +96,25 @@ def _batched(items: list[SubtitleItem], batch_size: int) -> list[list[SubtitleIt
     if batch_size <= 0:
         batch_size = len(items) or 1
     return [items[index : index + batch_size] for index in range(0, len(items), batch_size)]
+
+
+class _NoopStream:
+    def __enter__(self) -> _NoopStream:
+        return self
+
+    def __exit__(self, *args: object) -> bool:
+        return False
+
+    @staticmethod
+    def on_token(token: str) -> None:
+        pass
+
+
+def _stream(progress: ProgressCallback | None, label: str) -> _NoopStream:
+    factory = getattr(progress, "stream_context", None)
+    if factory is not None:
+        return factory(label)  # type: ignore[return-value]
+    return _NoopStream()
 
 
 def _report(progress: ProgressCallback | None, message: str) -> None:
