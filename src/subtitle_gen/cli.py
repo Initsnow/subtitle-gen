@@ -97,9 +97,9 @@ def _build_pipeline_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--translate", metavar="LANG", help="Translate subtitles to target language.")
     parser.add_argument(
-        "--no-bilingual",
+        "--bilingual",
         action="store_true",
-        help="Do not write bilingual subtitle files when translating with --out-dir.",
+        help="Also write a bilingual subtitle file alongside the translation.",
     )
     parser.add_argument("--asr-model", help="Override ASR model id.")
     parser.add_argument("--low-vram", action="store_true", help="Use the configured low-VRAM ASR model.")
@@ -216,9 +216,9 @@ def _cmd_translate(argv: list[str]) -> int:
     parser.add_argument("--out", type=Path, help="Output SRT path (default: input.<target>.srt).")
     parser.add_argument("--config", help="TOML config path.")
     parser.add_argument(
-        "--no-bilingual",
+        "--bilingual",
         action="store_true",
-        help="Write translation-only SRT instead of bilingual.",
+        help="Write bilingual SRT (original + translation).",
     )
     parser.add_argument("--llm-model", help="Override LLM model.")
     parser.add_argument("--llm-concurrency", type=int, help="Concurrent LLM requests.")
@@ -234,9 +234,7 @@ def _cmd_translate(argv: list[str]) -> int:
             return 1
 
         suffix = args.target.lower().replace(" ", "-")
-        default_out = args.input.parent / f"{args.input.stem}.{suffix}.srt"
         out_path = args.out or _default_out(args.input, suffix)
-        mode = "translation" if args.no_bilingual else "bilingual"
 
         with RichProgressReporter() as progress:
             progress(f"translating {len(items)} cue(s) to {args.target}")
@@ -245,9 +243,16 @@ def _cmd_translate(argv: list[str]) -> int:
                 items, target_language=args.target
             )
             progress("writing output")
-            _write_srt_output(out_path, translated, mode, strip_punctuation=config.output.strip_punctuation)
-            progress("done")
-        print(out_path)
+            _write_srt_output(out_path, translated, "translation", strip_punctuation=config.output.strip_punctuation)
+            if args.bilingual:
+                bilingual_path = _bilingual_out(out_path)
+                _write_srt_output(bilingual_path, translated, "bilingual", strip_punctuation=config.output.strip_punctuation)
+                progress("done")
+                print(out_path)
+                print(bilingual_path)
+            else:
+                progress("done")
+                print(out_path)
         return 0
     except (ConfigError, FormatError, Exception) as exc:
         print(f"subtitle-gen translate: {exc}", file=sys.stderr)
@@ -268,6 +273,10 @@ def _write_srt_output(
 
 def _default_out(input_path: Path, suffix: str) -> Path:
     return input_path.parent / f"{input_path.stem}.{suffix}.srt"
+
+
+def _bilingual_out(out_path: Path) -> Path:
+    return out_path.parent / f"{out_path.stem}.bilingual{out_path.suffix}"
 
 
 def _llm_config_with_overrides(
@@ -295,10 +304,10 @@ def _write_outputs(
 
     if args.out:
         out_path = Path(args.out)
-        mode = "bilingual" if args.translate and not args.no_bilingual else "translation"
-        if not args.translate:
-            mode = "original"
-        return [_write_srt_output(out_path, subtitles, mode, strip_punctuation=strip_punctuation)]
+        written = [_write_srt_output(out_path, subtitles, "translation" if args.translate else "original", strip_punctuation=strip_punctuation)]
+        if args.translate and args.bilingual:
+            written.append(_write_srt_output(_bilingual_out(out_path), subtitles, "bilingual", strip_punctuation=strip_punctuation))
+        return written
 
     out_dir = Path(args.out_dir) if args.out_dir else input_path.parent
     from .formats import write_output_set
@@ -309,7 +318,7 @@ def _write_outputs(
         subtitles,
         formats=formats,
         include_translation=bool(args.translate),
-        include_bilingual=bool(args.translate and not args.no_bilingual),
+        include_bilingual=bool(args.translate and args.bilingual),
         include_proofread=bool(args.translate),
         strip_punctuation=strip_punctuation,
     )
