@@ -1,7 +1,8 @@
 # subtitle-gen
 
 Generate SRT, VTT, or JSON subtitles from audio/video with Qwen3 ASR, forced
-alignment, local or LLM-assisted segmentation, and optional translation.
+alignment, local or LLM-assisted segmentation, proofreading, and optional translation.
+Also supports proofreading and translating existing SRT files directly.
 
 ## Requirements
 
@@ -23,25 +24,38 @@ local file is ignored by git and is loaded automatically when present.
 
 ## Usage
 
+### Pipeline (audio/video → subtitles)
+
 ```powershell
 uv run subtitle-gen input.mp4 --out output.srt
 uv run subtitle-gen input.mp4 --out-dir outputs --format srt --format vtt
 uv run subtitle-gen input.mp4 --segment-mode local --out-dir outputs
-uv run subtitle-gen input.mp4 --segment-mode hybrid --llm-model deepseek-v4-flash --out-dir outputs
+uv run subtitle-gen input.mp4 --segment-mode hybrid --out-dir outputs
 uv run subtitle-gen input.mp4 --translate zh --out-dir outputs
 ```
 
-Useful options:
+Pipeline options:
 
 - `--segment-mode none|blingfire|local|hybrid|llm`
 - `--language LANG` to hint the source language
-- `--translate LANG` to write translated and bilingual subtitles
+- `--translate LANG` — also runs proofread before translation, outputs original/proofread/translation/bilingual
 - `--no-bilingual` to skip bilingual output when translating
-- `--overwrite-cache` to regenerate cached audio, ASR, and alignment artifacts
+- `--overwrite-cache` to regenerate cached artifacts
 - `--no-cache` to run without persistent cache
 
-For LLM segmentation or translation, set `[llm].model` and `[llm].api_key` in
-`config.toml`, or use `SUBTITLE_GEN_LLM_MODEL` and `OPENAI_API_KEY`.
+### Subcommands (work on existing SRT)
+
+```powershell
+uv run subtitle-gen proofread subs.srt
+uv run subtitle-gen proofread subs.srt --out corrected.srt
+uv run subtitle-gen translate subs.srt --target "Chinese"
+uv run subtitle-gen translate subs.srt --target zh --no-bilingual
+```
+
+Both subcommands accept `--llm-model`, `--llm-concurrency`, `--batch-size` overrides.
+
+LLM segmentation uses a separate `[llm.segmentation]` config; translation and
+proofreading use `[llm]`. Set `api_key` (or `OPENAI_API_KEY`) and model for each.
 
 ## Development
 
