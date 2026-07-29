@@ -20,6 +20,17 @@ class SubtitleItem:
     end: float
     text: str
     translation: str | None = None
+    proofread: str | None = None
+
+    def with_text(self, text: str) -> "SubtitleItem":
+        return SubtitleItem(
+            id=self.id,
+            start=self.start,
+            end=self.end,
+            text=text,
+            translation=self.translation,
+            proofread=self.proofread,
+        )
 
     def with_translation(self, translation: str | None) -> "SubtitleItem":
         return SubtitleItem(
@@ -28,6 +39,37 @@ class SubtitleItem:
             end=self.end,
             text=self.text,
             translation=translation,
+            proofread=self.proofread,
+        )
+
+    def with_proofread(self, proofread: str) -> "SubtitleItem":
+        return SubtitleItem(
+            id=self.id,
+            start=self.start,
+            end=self.end,
+            text=self.text,
+            translation=self.translation,
+            proofread=proofread,
+        )
+
+    def with_start(self, start: float) -> "SubtitleItem":
+        return SubtitleItem(
+            id=self.id,
+            start=start,
+            end=self.end,
+            text=self.text,
+            translation=self.translation,
+            proofread=self.proofread,
+        )
+
+    def with_end(self, end: float) -> "SubtitleItem":
+        return SubtitleItem(
+            id=self.id,
+            start=self.start,
+            end=end,
+            text=self.text,
+            translation=self.translation,
+            proofread=self.proofread,
         )
 
     def to_dict(self) -> dict[str, object]:
@@ -37,6 +79,8 @@ class SubtitleItem:
             "end": round(self.end, 3),
             "text": self.text,
         }
+        if self.proofread is not None:
+            data["proofread"] = self.proofread
         if self.translation is not None:
             data["translation"] = self.translation
         return data

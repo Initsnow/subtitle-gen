@@ -24,6 +24,7 @@ from .llm_segmenter import LLMSegmenter, SegmentChunkInput
 from .local_segmenter import LocalSegmenter
 from .media import cut_wav_window, extract_wav, probe_duration
 from .segmenter import project_context_punctuation
+from .proofreader import SubtitleProofreader
 from .translator import SubtitleTranslator
 from .types import SubtitleItem, TimedToken, TranscriptChunk
 from .vad import plan_audio_windows
@@ -242,22 +243,32 @@ class SubtitlePipeline:
                 for aligned_chunk in aligned_chunks
             ]
             if segment_mode == "llm":
-                llm_client = OpenAICompatibleLLM(self.config.llm)
+                seg_llm_config = self.config.segmentation_llm
+                if seg_llm_config is None:
+                    raise ValueError(
+                        "[llm.segmentation] config is required for llm segmentation mode."
+                    )
+                llm_client = OpenAICompatibleLLM(seg_llm_config)
                 segmenter = LLMSegmenter(
                     llm_client,
                     self.config.segment,
-                    self.config.llm,
+                    seg_llm_config,
                     progress=progress,
                 )
                 segmented_chunks = asyncio.run(segmenter.segment_chunks_async(segment_inputs))
             elif segment_mode == "hybrid":
-                llm_client = OpenAICompatibleLLM(self.config.llm)
+                seg_llm_config = self.config.segmentation_llm
+                if seg_llm_config is None:
+                    raise ValueError(
+                        "[llm.segmentation] config is required for hybrid segmentation mode."
+                    )
+                llm_client = OpenAICompatibleLLM(seg_llm_config)
                 segmenter = HybridSegmenter(
                     LocalSegmenter(self.config.segment, refine_mode="soft"),
                     LLMSegmenter(
                         llm_client,
                         self.config.segment,
-                        self.config.llm,
+                        seg_llm_config,
                         progress=progress,
                     ),
                     self.config.segment,
@@ -289,17 +300,21 @@ class SubtitlePipeline:
         _report_limit_summary(progress, subtitles, self.config.segment.max_duration)
 
         if options.translate:
-            _report(progress, f"translating to {options.translate}")
             llm_client = OpenAICompatibleLLM(self.config.llm)
+            _report(progress, "proofreading")
+            subtitles = SubtitleProofreader(
+                llm_client,
+                self.config.llm,
+                progress=progress,
+            ).proofread(subtitles)
+            corrected_count = sum(1 for s in subtitles if s.proofread is not None)
+            _report(progress, f"proofread: {corrected_count} corrected")
+            _report(progress, f"translating to {options.translate}")
             subtitles = SubtitleTranslator(
                 llm_client,
                 self.config.llm,
                 progress=progress,
-            ).translate(
-                subtitles,
-                target_language=options.translate,
-                source_language=self.config.model.language,
-            )
+            ).translate(subtitles, target_language=options.translate)
             _report(progress, "translation complete")
 
         return PipelineResult(subtitles=subtitles, transcript_chunks=chunks)
@@ -330,6 +345,7 @@ def _renumber_subtitles(subtitles: list[SubtitleItem]) -> list[SubtitleItem]:
             end=subtitle.end,
             text=subtitle.text,
             translation=subtitle.translation,
+            proofread=subtitle.proofread,
         )
         for index, subtitle in enumerate(subtitles, start=1)
     ]

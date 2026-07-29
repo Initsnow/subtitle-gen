@@ -9,7 +9,7 @@ from .types import SubtitleItem
 
 
 TRANSLATION_SYSTEM_PROMPT = """You are a subtitle translation engine.
-Return only valid JSON.
+Return only valid JSON in compact format: [{"i":<id>,"t":"<translation>"}, ...].
 Preserve ids exactly and translate each subtitle line concisely."""
 
 ProgressCallback = Callable[[str], None]
@@ -34,7 +34,6 @@ class SubtitleTranslator:
         self,
         items: list[SubtitleItem],
         target_language: str,
-        source_language: str | None = None,
     ) -> list[SubtitleItem]:
         translated: list[SubtitleItem] = []
         batches = _batched(items, self.config.batch_size)
@@ -43,7 +42,7 @@ class SubtitleTranslator:
                 self.progress,
                 f"translation batch {index}/{len(batches)} ({len(batch)} subtitle(s))",
             )
-            translations = self._translate_batch(batch, target_language, source_language)
+            translations = self._translate_batch(batch, target_language)
             translated.extend(
                 item.with_translation(translations.get(item.id)) for item in batch
             )
@@ -53,18 +52,16 @@ class SubtitleTranslator:
         self,
         items: list[SubtitleItem],
         target_language: str,
-        source_language: str | None,
     ) -> dict[int, str]:
         payload = {
             "target_language": target_language,
-            "source_language": source_language,
             "requirements": [
                 "Translate the following subtitle lines as one coherent context.",
                 "Return exactly one item for each id.",
                 "Do not merge, split, remove, or reorder ids.",
                 "Keep translations concise and suitable for subtitles.",
             ],
-            "items": [{"id": item.id, "text": item.text} for item in items],
+            "items": [{"i": item.id, "t": item.proofread or item.text} for item in items],
         }
         response = self.llm.complete_json(TRANSLATION_SYSTEM_PROMPT, payload)
         translations = validate_translation_output(response.parsed, [item.id for item in items])
@@ -84,8 +81,8 @@ def validate_translation_output(raw_output: Any, expected_ids: list[int]) -> dic
     for item in raw_output:
         if not isinstance(item, dict):
             return None
-        item_id = item.get("id")
-        text = item.get("text")
+        item_id = item.get("i")
+        text = item.get("t")
         if not isinstance(item_id, int) or not isinstance(text, str):
             return None
         actual_ids.append(item_id)

@@ -24,9 +24,6 @@ class SegmentAtom:
     start: float
     end: float
 
-    def to_prompt_item(self) -> dict[str, object]:
-        return {"id": self.id, "text": self.text}
-
 
 def atomize_tokens(tokens: Iterable[TimedToken]) -> list[SegmentAtom]:
     return [

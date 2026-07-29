@@ -44,7 +44,7 @@ class OpenAICompatibleLLM:
         if not api_key:
             raise LLMError("Missing LLM API key. Set [llm].api_key or OPENAI_API_KEY.")
 
-        body = {
+        body: dict[str, Any] = {
             "model": model,
             "temperature": self.config.temperature,
             "messages": [
@@ -52,6 +52,10 @@ class OpenAICompatibleLLM:
                 {"role": "user", "content": user_prompt},
             ],
         }
+        if self.config.thinking:
+            body["thinking"] = {"type": "enabled"}
+        if self.config.thinking_effort is not None:
+            body["reasoning_effort"] = self.config.thinking_effort
         return self._post_chat_completions(body, api_key)
 
     async def complete_text_async(self, system_prompt: str, user_prompt: str) -> str:

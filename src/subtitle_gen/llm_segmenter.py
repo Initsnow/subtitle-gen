@@ -43,6 +43,7 @@ class SegmentChunkInput:
 class DelimitedTextResult:
     groups: list[list[int]]
     error: str | None = None
+    boundary_times: list[float] | None = None
 
 
 class LLMSegmenter:
@@ -93,14 +94,14 @@ class LLMSegmenter:
             for chunk_index, atoms in enumerate(chunk_atoms)
         ]
         chunk_results = await asyncio.gather(*tasks)
-        groups_by_chunk = [
-            groups for _chunk_index, groups in sorted(chunk_results, key=lambda item: item[0])
-        ]
+        sorted_results = sorted(chunk_results, key=lambda item: item[0])
 
-        return [
-            segments_from_atom_groups(groups, atoms)
-            for groups, atoms in zip(groups_by_chunk, chunk_atoms, strict=True)
-        ]
+        subtitles_by_chunk: list[list[SubtitleItem]] = []
+        for (_index, groups, boundary_times), atoms in zip(sorted_results, chunk_atoms, strict=True):
+            subtitles = segments_from_atom_groups(groups, atoms)
+            _apply_boundary_times(subtitles, boundary_times)
+            subtitles_by_chunk.append(subtitles)
+        return subtitles_by_chunk
 
     async def _segment_chunk_async(
         self,
@@ -110,9 +111,9 @@ class LLMSegmenter:
         require_split: bool,
         semaphore: asyncio.Semaphore,
         total_chunks: int,
-    ) -> tuple[int, list[list[int]]]:
+    ) -> tuple[int, list[list[int]], list[float] | None]:
         if not atoms:
-            return chunk_index, []
+            return chunk_index, [], None
         async with semaphore:
             fallback_reason = "unknown error"
             try:
@@ -131,7 +132,7 @@ class LLMSegmenter:
                             self.progress,
                             f"LLM segmentation {chunk_index + 1}/{total_chunks}: ok",
                         )
-                        return chunk_index, result.groups
+                        return chunk_index, result.groups, result.boundary_times
                 else:
                     fallback_reason = f"invalid output: {result.error or fallback_reason}"
             except Exception as exc:
@@ -143,7 +144,7 @@ class LLMSegmenter:
                     f"fallback ({fallback_reason})"
                 ),
             )
-            return chunk_index, unsegmented_atom_group(atoms)
+            return chunk_index, unsegmented_atom_group(atoms), None
 
 
 def build_delimiter_prompt(
@@ -158,29 +159,16 @@ def build_delimiter_prompt(
         "Output ONLY the processed source text.",
         "Do not wrap the answer in quotes or code fences.",
         "Do not change spacing, punctuation, words, or characters.",
-        "Do not insert | inside a word/token.",
         "Prefer complete natural clauses over fixed-length chopping.",
     ]
     if require_split:
-        requirements.extend(
-            [
-                "This source is over subtitle limits; insert at least one |.",
-                "Do not return the source unchanged unless there is only one token.",
-                "Use the tokenized source to place | only between adjacent tokens.",
-            ]
+        requirements.append(
+            "This source is over subtitle limits; insert at least one |."
         )
     if context_text:
         requirements.append("Use the context only to understand sentence boundaries.")
     lines = ["Requirements:"]
     lines.extend(f"- {requirement}" for requirement in requirements)
-    if require_split:
-        lines.extend(
-            [
-                "",
-                "Tokenized source:",
-                " / ".join(f"{atom.id}:{atom.text}" for atom in atoms),
-            ]
-        )
     if context_text:
         lines.extend(["", "Context:", context_text])
     lines.extend(["", "Source text:", source_text])
@@ -209,11 +197,12 @@ def parse_delimited_text(
         return DelimitedTextResult([], "empty output")
 
     groups = groups_from_text_parts(parts, atoms)
+    boundary_times: list[float] | None = None
     if not groups:
-        groups = _groups_from_delimiter_offsets(parts, atoms)
+        groups, boundary_times = _groups_with_proportional_times(parts, atoms)
     if not groups:
         return DelimitedTextResult([], "delimiter positions could not be mapped to tokens")
-    return DelimitedTextResult(groups)
+    return DelimitedTextResult(groups, boundary_times=boundary_times)
 
 
 def unsegmented_atom_group(atoms: list[SegmentAtom]) -> list[list[int]]:
@@ -234,13 +223,15 @@ def strip_text_response(content: str) -> str:
     return "\n".join(lines).strip()
 
 
-def _groups_from_delimiter_offsets(parts: list[str], atoms: list[SegmentAtom]) -> list[list[int]]:
+def _groups_with_proportional_times(
+    parts: list[str], atoms: list[SegmentAtom]
+) -> tuple[list[list[int]], list[float] | None]:
     if len(parts) < 2 or len(atoms) < 2:
-        return []
+        return [], None
 
     normalized_total = sum(len(normalize_for_mapping(atom.text)) for atom in atoms)
     if normalized_total <= 0:
-        return []
+        return [], None
 
     split_offsets: list[int] = []
     cursor = 0
@@ -249,7 +240,7 @@ def _groups_from_delimiter_offsets(parts: list[str], atoms: list[SegmentAtom]) -
         if 0 < cursor < normalized_total:
             split_offsets.append(cursor)
     if not split_offsets:
-        return []
+        return [], None
 
     boundary_offsets: list[tuple[int, int]] = []
     cursor = 0
@@ -258,19 +249,27 @@ def _groups_from_delimiter_offsets(parts: list[str], atoms: list[SegmentAtom]) -
         if 0 < cursor < normalized_total:
             boundary_offsets.append((cursor, atom_index))
     if not boundary_offsets:
-        return []
+        return [], None
 
-    snapped_indices = sorted(
-        {
-            min(
-                boundary_offsets,
-                key=lambda boundary: (abs(boundary[0] - split_offset), boundary[0]),
-            )[1]
-            for split_offset in split_offsets
-        }
-    )
+    offset_to_snapped: dict[int, int] = {}
+    for split_offset in split_offsets:
+        nearest = min(
+            boundary_offsets,
+            key=lambda boundary: (abs(boundary[0] - split_offset), boundary[0]),
+        )
+        offset_to_snapped[split_offset] = nearest[1]
+
+    unique_indices: dict[int, int] = {}
+    for split_offset, snapped_idx in offset_to_snapped.items():
+        if snapped_idx not in unique_indices:
+            unique_indices[snapped_idx] = split_offset
+
+    snapped_indices = sorted(unique_indices)
     if not snapped_indices:
-        return []
+        return [], None
+
+    proportional_times = _compute_boundary_times(list(unique_indices.values()), atoms)
+    snapped_times = [proportional_times[unique_indices[idx]] for idx in snapped_indices]
 
     groups: list[list[int]] = []
     start_index = 0
@@ -282,7 +281,38 @@ def _groups_from_delimiter_offsets(parts: list[str], atoms: list[SegmentAtom]) -
     tail = [atom.id for atom in atoms[start_index:]]
     if tail:
         groups.append(tail)
-    return groups
+    return groups, snapped_times if len(snapped_times) == len(groups) - 1 else None
+
+
+def _compute_boundary_times(
+    split_offsets: list[int], atoms: list[SegmentAtom]
+) -> dict[int, float]:
+    """Map each delimiter character offset to a proportional time within its token."""
+    normalized_texts = [normalize_for_mapping(a.text) for a in atoms]
+    atom_lengths = [len(t) for t in normalized_texts]
+
+    result: dict[int, float] = {}
+    for offset in split_offsets:
+        cursor = 0
+        for atom_index, length in enumerate(atom_lengths):
+            if cursor + length >= offset:
+                ratio = (offset - cursor) / length if length > 0 else 0.5
+                atom = atoms[atom_index]
+                result[offset] = atom.start + ratio * (atom.end - atom.start)
+                break
+            cursor += length
+    return result
+
+
+def _apply_boundary_times(
+    subtitles: list[SubtitleItem], boundary_times: list[float] | None
+) -> None:
+    if not boundary_times or len(subtitles) < 2:
+        return
+    for i in range(min(len(boundary_times), len(subtitles) - 1)):
+        time = boundary_times[i]
+        subtitles[i] = subtitles[i].with_end(time)
+        subtitles[i + 1] = subtitles[i + 1].with_start(time)
 
 
 def _report(progress: ProgressCallback | None, message: str) -> None:

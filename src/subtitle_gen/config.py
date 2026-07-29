@@ -72,6 +72,8 @@ class LLMConfig:
     timeout: float = 60.0
     max_retries: int = 2
     temperature: float = 0.0
+    thinking: bool = False
+    thinking_effort: str | None = None
     batch_size: int = 40
     concurrency: int = 2
 
@@ -80,6 +82,7 @@ class LLMConfig:
 class OutputConfig:
     default_formats: tuple[str, ...] = ("srt",)
     bilingual_separator: str = "\n"
+    strip_punctuation: bool = False
 
 
 @dataclass(frozen=True)
@@ -90,6 +93,7 @@ class AppConfig:
     cache: CacheConfig = CacheConfig()
     performance: PerformanceConfig = PerformanceConfig()
     llm: LLMConfig = LLMConfig()
+    segmentation_llm: LLMConfig | None = None
     output: OutputConfig = OutputConfig()
     cache_dir: str = ".subtitle-gen-cache"
 
@@ -154,6 +158,7 @@ def apply_overrides(config: AppConfig, **overrides: Any) -> AppConfig:
         cache=cache,
         performance=performance,
         llm=llm,
+        segmentation_llm=config.segmentation_llm,
         output=config.output,
         cache_dir=cache_dir,
     )
@@ -168,11 +173,17 @@ class ConfigError(ValueError):
 
 
 def _merge_app_config(config: AppConfig, data: dict[str, Any]) -> AppConfig:
-    allowed_top = {field.name for field in fields(AppConfig)}
+    allowed_top = {field.name for field in fields(AppConfig)} - {"segmentation_llm"}
     unknown_top = sorted(set(data) - allowed_top)
     if unknown_top:
         raise ConfigError(f"Unknown config section(s): {', '.join(unknown_top)}")
 
+    llm_data = dict(data.get("llm", {}))
+    if not isinstance(llm_data, dict):
+        raise ConfigError("[llm] must be a TOML table.")
+
+    segmentation_data = llm_data.pop("segmentation", None)
+    llm_config = _merge_llm(config.llm, llm_data)
     return AppConfig(
         model=_merge_dataclass(config.model, data.get("model", {}), "model"),
         vad=_merge_dataclass(config.vad, data.get("vad", {}), "vad"),
@@ -181,7 +192,8 @@ def _merge_app_config(config: AppConfig, data: dict[str, Any]) -> AppConfig:
         performance=_merge_dataclass(
             config.performance, data.get("performance", {}), "performance"
         ),
-        llm=_merge_llm(config.llm, data.get("llm", {})),
+        llm=llm_config,
+        segmentation_llm=_merge_optional_llm(llm_config, segmentation_data),
         output=_merge_output(config.output, data.get("output", {})),
         cache_dir=str(data.get("cache_dir", config.cache_dir)),
     )
@@ -207,6 +219,16 @@ def _merge_llm(instance: LLMConfig, data: Any) -> LLMConfig:
     return _validate_llm_config(_merge_dataclass(instance, data, "llm"))
 
 
+def _merge_optional_llm(base: LLMConfig, data: Any) -> LLMConfig | None:
+    if data is None:
+        return None
+    if not isinstance(data, dict):
+        raise ConfigError("[llm.segmentation] must be a TOML table.")
+    return _validate_llm_config(
+        _merge_dataclass(base, data, "llm.segmentation")
+    )
+
+
 def _validate_segment_config(config: SegmentConfig) -> SegmentConfig:
     valid_modes = {"none", "blingfire", "local", "hybrid", "llm"}
     if config.mode not in valid_modes:
@@ -225,6 +247,12 @@ def _validate_llm_config(config: LLMConfig) -> LLMConfig:
     _require_number("[llm].temperature", config.temperature)
     if not 0.0 <= float(config.temperature) <= 2.0:
         raise ConfigError("[llm].temperature must be between 0.0 and 2.0.")
+    if config.thinking_effort is not None:
+        valid_efforts = {"low", "medium", "high", "xhigh", "max"}
+        if config.thinking_effort not in valid_efforts:
+            raise ConfigError(
+                f"[llm].thinking_effort must be one of: {', '.join(sorted(valid_efforts))}."
+            )
     return config
 
 

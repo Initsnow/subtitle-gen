@@ -47,14 +47,21 @@ compile_aligner = true
 compile_asr = false
 
 [llm]
-model = "deepseek-v4-flash"
+model = "deepseek-v4-pro"
 base_url = "https://api.deepseek.com/v1"
 api_key = ""
 timeout = 120.0
 max_retries = 2
 temperature = 0.5
-batch_size = 40
+thinking = true
+thinking_effort = "xhigh"
+batch_size = 3000
 concurrency = 400
+
+[llm.segmentation]
+model = "deepseek-v4-flash"
+thinking = false
 
 [output]
 default_formats = ["srt"]
+strip_punctuation = true
