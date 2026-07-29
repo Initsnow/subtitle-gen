@@ -20,6 +20,7 @@ dependencies = [
   "torch>=2.11,<2.12",
   "torchaudio>=2.11,<2.12",
   "transformers @ git+https://github.com/huggingface/transformers.git",
+  "triton-windows>=3.3.0; sys_platform == 'win32'",
 ]
 
 [build-system]
