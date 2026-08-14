@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import re
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
 
@@ -13,6 +14,10 @@ SubtitleMode = Literal["original", "translation", "bilingual", "proofread"]
 _SRT_TIMING_RE = re.compile(r"\d\d:\d\d:\d\d[,.]\d\d\d\s+-->\s+\d\d:\d\d:\d\d[,.]\d\d\d")
 _SRT_TIMESTAMP_RE = re.compile(r"(\d{2}):(\d{2}):(\d{2})[,.](\d{3})")
 _STRIP_PUNCTUATION_CHARS = set(",.;:!?，。；：！？、")
+
+_LRC_METADATA_RE = re.compile(r"^\[([A-Za-z]+):(.*)\]$")
+_LRC_TIMESTAMP_RE = re.compile(r"\[(\d{1,3}):(\d{1,2})(?:[.:](\d{1,3}))?\]")
+_LRC_WORD_TAG_RE = re.compile(r"<(\d{1,3}):(\d{1,2})(?:[.:](\d{1,3}))?>")
 
 
 class FormatError(ValueError):
@@ -269,3 +274,56 @@ def _parse_srt_timestamp(ts: str) -> float:
         raise FormatError(f"Invalid SRT timestamp: {ts}")
     hours, minutes, secs, millis = int(m[1]), int(m[2]), int(m[3]), int(m[4])
     return hours * 3600.0 + minutes * 60.0 + secs + millis / 1000.0
+
+
+@dataclass(frozen=True)
+class LrcData:
+    metadata: list[str]
+    lines: list[str]
+
+
+def parse_lrc(path: str | Path) -> LrcData:
+    """Parse an LRC file into its metadata tags and untimed text lines.
+
+    Timestamps (``[mm:ss.xx]``) and word-level tags (``<mm:ss.xx>``) are
+    stripped so the returned lines are plain text.
+    """
+    content = Path(path).read_text(encoding="utf-8-sig").replace("\r\n", "\n").replace("\r", "\n")
+    metadata: list[str] = []
+    lines: list[str] = []
+    for raw_line in content.split("\n"):
+        line = raw_line.strip()
+        if not line:
+            continue
+        if _LRC_METADATA_RE.match(line):
+            metadata.append(line)
+            continue
+        line = _LRC_TIMESTAMP_RE.sub("", line)
+        line = _LRC_WORD_TAG_RE.sub("", line)
+        line = line.strip()
+        if line:
+            lines.append(line)
+    return LrcData(metadata=metadata, lines=lines)
+
+
+def format_lrc_timestamp(seconds: float) -> str:
+    minutes, secs = divmod(max(0.0, seconds), 60.0)
+    return f"[{int(minutes):02d}:{secs:05.2f}]"
+
+
+def render_lrc(items: list[SubtitleItem], metadata: list[str] | None = None) -> str:
+    lines = list(metadata or [])
+    for item in items:
+        lines.append(f"{format_lrc_timestamp(item.start)}{item.text}")
+    return "\n".join(lines) + "\n"
+
+
+def write_lrc(
+    path: str | Path,
+    items: list[SubtitleItem],
+    metadata: list[str] | None = None,
+) -> Path:
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(render_lrc(items, metadata), encoding="utf-8")
+    return path

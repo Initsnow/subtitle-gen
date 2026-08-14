@@ -5,11 +5,12 @@ import sys
 from pathlib import Path
 
 from .config import ConfigError, LLMConfig, apply_overrides, load_config
-from .formats import FormatError, parse_srt
+from .formats import FormatError, parse_srt, write_lrc, write_subtitles
 from .llm import OpenAICompatibleLLM
 from .pipeline import PipelineOptions, SubtitlePipeline
 from .progress import RichProgressReporter
 from .proofreader import SubtitleProofreader
+from .text_align import align_lines_to_audio, load_text_input
 from .translator import SubtitleTranslator
 from .types import SubtitleItem
 
@@ -23,6 +24,8 @@ def main(argv: list[str] | None = None) -> int:
         return _cmd_proofread(argv[1:])
     if argv and argv[0] == "translate":
         return _cmd_translate(argv[1:])
+    if argv and argv[0] == "align":
+        return _cmd_align(argv[1:])
     return _cmd_pipeline(argv)
 
 
@@ -76,7 +79,12 @@ def _build_pipeline_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="subtitle-gen",
         description="Generate subtitles from audio or video files.",
-        epilog="subcommands:\n  proofread     proofread an existing SRT file\n  translate     translate an existing SRT file",
+        epilog=(
+            "subcommands:\n"
+            "  align         add timestamps to untimed text/LRC against audio\n"
+            "  proofread     proofread an existing SRT file\n"
+            "  translate     translate an existing SRT file"
+        ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     parser.add_argument("input", help="Input audio/video path.")
@@ -257,6 +265,173 @@ def _cmd_translate(argv: list[str]) -> int:
     except (ConfigError, FormatError, Exception) as exc:
         print(f"subtitle-gen translate: {exc}", file=sys.stderr)
         return 1
+
+
+# ---------------------------------------------------------------------------
+# align (untimed text/LRC -> timed subtitles)
+# ---------------------------------------------------------------------------
+
+def _cmd_align(argv: list[str]) -> int:
+    parser = argparse.ArgumentParser(
+        prog="subtitle-gen align",
+        description="Add timestamps to untimed lyrics/subtitle text by aligning it to audio.",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    parser.add_argument("audio", type=Path, help="Audio/video file to align against.")
+    parser.add_argument("text", type=Path, help="Untimed text or LRC file (one line per cue).")
+    parser.add_argument("--out", type=Path, help="Output path. Format is inferred from extension.")
+    parser.add_argument(
+        "--format",
+        action="append",
+        choices=["lrc", "srt", "vtt", "json"],
+        dest="formats",
+        help="Output format(s) when --out is not given. Default: lrc.",
+    )
+    parser.add_argument("--config", help="TOML config path. Defaults to ./config.toml if present.")
+    parser.add_argument("--language", help="Source language hint for ASR and forced alignment.")
+    parser.add_argument("--asr-model", help="Override ASR model id.")
+    parser.add_argument("--low-vram", action="store_true", help="Use the configured low-VRAM ASR model.")
+    parser.add_argument("--device-map", default=None, help="Transformers device_map override.")
+    cache = parser.add_mutually_exclusive_group()
+    cache.add_argument(
+        "--cache",
+        action="store_true",
+        default=None,
+        dest="cache_enabled",
+        help="Enable persistent audio, ASR, and alignment cache.",
+    )
+    cache.add_argument(
+        "--no-cache",
+        action="store_false",
+        dest="cache_enabled",
+        help="Disable persistent audio, ASR, and alignment cache for this run.",
+    )
+    parser.add_argument("--cache-dir", help="Cache directory.")
+    parser.add_argument(
+        "--overwrite-cache",
+        action="store_true",
+        help="Regenerate cached audio chunks, ASR transcripts, and alignments.",
+    )
+    parser.add_argument(
+        "--no-refine",
+        action="store_true",
+        help="Skip the per-line forced-alignment refinement pass.",
+    )
+    parser.add_argument(
+        "--no-vad",
+        action="store_true",
+        help="Disable VAD and align the whole audio with fixed-size windows (use for songs).",
+    )
+
+    compile_aligner = parser.add_mutually_exclusive_group()
+    compile_aligner.add_argument(
+        "--compile-aligner",
+        action="store_true",
+        default=None,
+        help="Compile the forced aligner forward pass.",
+    )
+    compile_aligner.add_argument(
+        "--no-compile-aligner",
+        action="store_false",
+        dest="compile_aligner",
+        help="Disable forced aligner torch.compile.",
+    )
+
+    compile_asr = parser.add_mutually_exclusive_group()
+    compile_asr.add_argument(
+        "--compile-asr",
+        action="store_true",
+        default=None,
+        help="Compile ASR forward pass.",
+    )
+    compile_asr.add_argument(
+        "--no-compile-asr",
+        action="store_false",
+        dest="compile_asr",
+        help="Disable ASR torch.compile.",
+    )
+    args = parser.parse_args(argv)
+
+    try:
+        config = load_config(args.config)
+        config = apply_overrides(
+            config,
+            asr_model=args.asr_model,
+            low_vram=args.low_vram,
+            language=args.language,
+            device_map=args.device_map,
+            compile_aligner=args.compile_aligner,
+            compile_asr=args.compile_asr,
+            cache_enabled=args.cache_enabled,
+            cache_dir=args.cache_dir,
+        )
+        metadata, lines = load_text_input(args.text)
+        if not lines:
+            print("subtitle-gen align: no text lines found in input file.", file=sys.stderr)
+            return 1
+
+        language = args.language or config.model.language
+        with RichProgressReporter() as progress:
+            progress(f"aligning {len(lines)} line(s)")
+            items = align_lines_to_audio(
+                config,
+                args.audio,
+                lines,
+                language=language,
+                progress=progress,
+                overwrite_cache=args.overwrite_cache,
+                refine=not args.no_refine,
+                use_vad=not args.no_vad,
+            )
+            progress("writing subtitle output")
+            written = _write_align_outputs(
+                args,
+                items,
+                metadata,
+                strip_punctuation=config.output.strip_punctuation,
+            )
+            progress(f"wrote {len(written)} file(s)")
+    except (ConfigError, FormatError, Exception) as exc:
+        print(f"subtitle-gen align: {exc}", file=sys.stderr)
+        return 1
+
+    for path in written:
+        print(path)
+    return 0
+
+
+def _write_align_outputs(
+    args: argparse.Namespace,
+    items: list[SubtitleItem],
+    metadata: list[str],
+    *,
+    strip_punctuation: bool = False,
+) -> list[Path]:
+    if args.out:
+        return [_write_align_file(args.out, items, metadata, strip_punctuation=strip_punctuation)]
+
+    text_path = Path(args.text)
+    formats = args.formats or ["lrc"]
+    written: list[Path] = []
+    for subtitle_format in formats:
+        out_path = text_path.with_suffix(f".timed.{subtitle_format}")
+        written.append(
+            _write_align_file(out_path, items, metadata, strip_punctuation=strip_punctuation)
+        )
+    return written
+
+
+def _write_align_file(
+    path: Path,
+    items: list[SubtitleItem],
+    metadata: list[str],
+    *,
+    strip_punctuation: bool = False,
+) -> Path:
+    extension = path.suffix.lower().lstrip(".")
+    if extension == "lrc":
+        return write_lrc(path, items, metadata)
+    return write_subtitles(path, items, "original", strip_punctuation=strip_punctuation)
 
 
 # ---------------------------------------------------------------------------

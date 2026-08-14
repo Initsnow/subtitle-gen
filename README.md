@@ -2,7 +2,8 @@
 
 Generate SRT, VTT, or JSON subtitles from audio/video with Qwen3 ASR, forced
 alignment, local or LLM-assisted segmentation, proofreading, and optional translation.
-Also supports proofreading and translating existing SRT files directly.
+Also supports proofreading and translating existing SRT files directly, and adding
+timestamps to untimed lyrics/subtitle text by aligning it to audio.
 
 ## Requirements
 
@@ -42,6 +43,31 @@ Pipeline options:
 - `--no-bilingual` to skip bilingual output when translating
 - `--overwrite-cache` to regenerate cached artifacts
 - `--no-cache` to run without persistent cache
+
+### Align untimed text (add timestamps to existing subtitles/lyrics)
+
+```powershell
+uv run subtitle-gen align "song.flac" "lyrics.lrc" --no-vad
+uv run subtitle-gen align "song.flac" "lyrics.txt" --out "lyrics.timed.lrc"
+uv run subtitle-gen align "song.flac" "lyrics.txt" --format lrc --format srt
+uv run subtitle-gen align "song.flac" "lyrics.txt" --language Japanese
+```
+
+`align` runs ASR + forced alignment over the audio, then maps each input line
+onto the resulting timed words with a global sequence alignment. The text file
+may be plain text (one line per cue) or an LRC file; LRC metadata tags
+(`[ti:...]`, `[ar:...]`, ...) are preserved in the output. By default it writes
+`<text>.timed.lrc`; use `--out` or `--format lrc|srt|vtt|json` to control output.
+
+VAD is used by default (good for speech). Pass `--no-vad` for songs/music, where
+Silero VAD misses sung vocals — this aligns the whole audio with fixed-size
+windows instead.
+
+It accepts the same model/cache flags as the pipeline (`--asr-model`,
+`--low-vram`, `--language`, `--device-map`, `--cache`/`--no-cache`,
+`--cache-dir`, `--overwrite-cache`, `--[no-]compile-aligner`,
+`--[no-]compile-asr`), plus `--no-refine` to skip the per-line forced-alignment
+refinement pass.
 
 ### Subcommands (work on existing SRT)
 
