@@ -47,9 +47,7 @@ class SubtitleTranslator:
                 translations = self._translate_batch(
                     batch, target_language, on_token=stream.on_token
                 )
-            translated.extend(
-                item.with_translation(translations.get(item.id)) for item in batch
-            )
+            translated.extend(item.with_translation(translations.get(item.id)) for item in batch)
         return translated
 
     def _translate_batch(

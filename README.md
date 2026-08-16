@@ -55,19 +55,24 @@ uv run subtitle-gen align "song.flac" "lyrics.txt" --language Japanese
 
 `align` runs ASR + forced alignment over the audio, then maps each input line
 onto the resulting timed words with a global sequence alignment. The text file
-may be plain text (one line per cue) or an LRC file; LRC metadata tags
-(`[ti:...]`, `[ar:...]`, ...) are preserved in the output. By default it writes
-`<text>.timed.lrc`; use `--out` or `--format lrc|srt|vtt|json` to control output.
+may be plain text (one line per cue) or an LRC file; descriptive LRC metadata
+tags (`[ti:...]`, `[ar:...]`, ...) are preserved in the output, while stale
+timing tags (`[offset:...]`, `[length:...]`) are dropped because timestamps are
+regenerated. By default it writes `<text>.timed.lrc`; use `--out` (single file,
+format inferred from its extension) or `--format lrc|srt|vtt|json` (repeatable)
+to control output. `--out` and `--format` cannot be combined.
 
 VAD is used by default (good for speech). Pass `--no-vad` for songs/music, where
-Silero VAD misses sung vocals — this aligns the whole audio with fixed-size
-windows instead.
+Silero VAD misses sung vocals — this aligns the whole audio with slightly
+overlapping fixed-size windows so boundary words are not cut off.
 
 It accepts the same model/cache flags as the pipeline (`--asr-model`,
 `--low-vram`, `--language`, `--device-map`, `--cache`/`--no-cache`,
 `--cache-dir`, `--overwrite-cache`, `--[no-]compile-aligner`,
 `--[no-]compile-asr`), plus `--no-refine` to skip the per-line forced-alignment
-refinement pass.
+refinement pass. With persistent cache enabled, both the rough pass and the
+per-line refinement alignments are cached, so unchanged inputs are reused on
+subsequent runs.
 
 ### Subcommands (work on existing SRT)
 

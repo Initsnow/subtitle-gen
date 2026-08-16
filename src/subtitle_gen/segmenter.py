@@ -10,9 +10,7 @@ from .types import SubtitleItem, TimedToken
 TRAILING_PUNCTUATION = set(",.;:!?，。；：！？、)]}）】」』")
 LEADING_PUNCTUATION = set("([{（【「『")
 CJK_PUNCTUATION = set("，。；：！？、")
-ATTACHABLE_PUNCTUATION = set(
-    ",.;:!?，。；：！？、)]}）】」』\"'”’"
-)
+ATTACHABLE_PUNCTUATION = set(",.;:!?，。；：！？、)]}）】」』\"'”’")
 _CJK_RE = re.compile(r"[\u3400-\u9fff\u3040-\u30ff\uac00-\ud7af]")
 _CONTENT_RE = re.compile(r"[0-9A-Za-z\u3400-\u9fff\u3040-\u30ff\uac00-\ud7af]")
 
@@ -185,9 +183,7 @@ def _match_context_spans(
     context_text: str,
 ) -> list[tuple[int, int] | None]:
     context_units = [
-        (char.lower(), index)
-        for index, char in enumerate(context_text)
-        if _CONTENT_RE.match(char)
+        (char.lower(), index) for index, char in enumerate(context_text) if _CONTENT_RE.match(char)
     ]
     if not context_units:
         return [None for _token in tokens]

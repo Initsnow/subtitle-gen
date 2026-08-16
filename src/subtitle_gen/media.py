@@ -106,13 +106,13 @@ def read_mono_wav_array(wav_path: str | Path, sample_rate: int = 16_000):
     try:
         import soundfile as sf
     except ImportError as exc:
-        raise MediaError("soundfile is required to read extracted WAV audio. Run `uv sync`.") from exc
+        raise MediaError(
+            "soundfile is required to read extracted WAV audio. Run `uv sync`."
+        ) from exc
 
     data, actual_sample_rate = sf.read(str(wav_path), dtype="float32", always_2d=True)
     if actual_sample_rate != sample_rate:
-        raise MediaError(
-            f"Expected {sample_rate} Hz WAV, got {actual_sample_rate} Hz: {wav_path}"
-        )
+        raise MediaError(f"Expected {sample_rate} Hz WAV, got {actual_sample_rate} Hz: {wav_path}")
     if data.size == 0:
         return data[:, 0]
     return data.mean(axis=1)

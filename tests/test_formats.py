@@ -48,6 +48,11 @@ def test_format_lrc_timestamp_centiseconds():
     assert format_lrc_timestamp(65.789) == "[01:05.79]"
 
 
+def test_format_lrc_timestamp_carries_rounded_seconds_into_minutes():
+    assert format_lrc_timestamp(59.996) == "[01:00.00]"
+    assert format_lrc_timestamp(3599.999) == "[60:00.00]"
+
+
 def test_render_lrc_keeps_metadata_and_uses_start_times():
     items = [
         SubtitleItem(1, 5.0, 7.0, "first line"),
@@ -56,9 +61,15 @@ def test_render_lrc_keeps_metadata_and_uses_start_times():
 
     content = render_lrc(items, metadata=["[ti:Title]", "[ar:Artist]"])
 
-    assert content == (
-        "[ti:Title]\n[ar:Artist]\n[00:05.00]first line\n[00:09.25]second line\n"
-    )
+    assert content == ("[ti:Title]\n[ar:Artist]\n[00:05.00]first line\n[00:09.25]second line\n")
+
+
+def test_render_lrc_honors_strip_punctuation():
+    items = [SubtitleItem(1, 5.0, 7.0, "first line!")]
+
+    content = render_lrc(items, strip_punctuation=True)
+
+    assert content == "[00:05.00]first line\n"
 
 
 def test_parse_lrc_strips_timestamps_and_keeps_metadata(tmp_path):

@@ -24,16 +24,10 @@ _AUDIO_SUMMARY_RE = re.compile(
     r"^audio: (?P<duration>.+); chunks: (?P<chunks>\d+); media id: (?P<media_id>\S+)$"
 )
 _MODE_RE = re.compile(r"^mode: (?P<mode>[^;]+);")
-_CHUNK_START_RE = re.compile(
-    r"^chunk (?P<index>\d+)/(?P<total>\d+) (?P<window>.+)$"
-)
-_CHUNK_STATUS_RE = re.compile(
-    r"^chunk (?P<index>\d+)/(?P<total>\d+): (?P<status>.+)$"
-)
+_CHUNK_START_RE = re.compile(r"^chunk (?P<index>\d+)/(?P<total>\d+) (?P<window>.+)$")
+_CHUNK_STATUS_RE = re.compile(r"^chunk (?P<index>\d+)/(?P<total>\d+): (?P<status>.+)$")
 _LLM_REQUESTS_RE = re.compile(r"^LLM segmentation requests: (?P<total>\d+)$")
-_LLM_RESULT_RE = re.compile(
-    r"^LLM segmentation (?P<index>\d+)/(?P<total>\d+): (?P<status>.+)$"
-)
+_LLM_RESULT_RE = re.compile(r"^LLM segmentation (?P<index>\d+)/(?P<total>\d+): (?P<status>.+)$")
 _TRANSLATION_BATCH_RE = re.compile(
     r"^translation batch (?P<index>\d+)/(?P<total>\d+) "
     r"\((?P<count>\d+) subtitle\(s\)\)$"
@@ -394,7 +388,7 @@ class StreamDisplay:
         elapsed = time.time() - self._start_time
         display = self._content
         if len(display) > self.MAX_VISIBLE_CHARS:
-            display = "…" + display[-(self.MAX_VISIBLE_CHARS - 1):]
+            display = "…" + display[-(self.MAX_VISIBLE_CHARS - 1) :]
 
         header = f"[bold cyan]LLM[/] · {self._label}" if self._label else "[bold cyan]LLM[/]"
         subtitle = f"{self._chunks} chunks · {elapsed:.1f}s"

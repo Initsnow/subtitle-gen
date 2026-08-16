@@ -41,7 +41,10 @@ class SubtitleProofreader:
         for index, batch in enumerate(batches, start=1):
             label = f"Proofread batch {index}/{len(batches)} ({len(batch)} items)"
             with _stream(self.progress, label) as stream:
-                _report(self.progress, f"proofreading batch {index}/{len(batches)} ({len(batch)} subtitle(s))")
+                _report(
+                    self.progress,
+                    f"proofreading batch {index}/{len(batches)} ({len(batch)} subtitle(s))",
+                )
                 corrections = self._proofread_batch(batch, on_token=stream.on_token)
             corrected.extend(
                 item.with_proofread(corrections[item.id]) if item.id in corrections else item

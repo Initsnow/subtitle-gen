@@ -88,7 +88,9 @@ def render_json(
                 "id": item.id,
                 "start": round(item.start, 3),
                 "end": round(item.end, 3),
-                "text": _strip_punctuation(item.proofread or item.text) if strip_punctuation else (item.proofread or item.text),
+                "text": _strip_punctuation(item.proofread or item.text)
+                if strip_punctuation
+                else (item.proofread or item.text),
             }
             for item in items
         ]
@@ -98,7 +100,9 @@ def render_json(
                 "id": item.id,
                 "start": round(item.start, 3),
                 "end": round(item.end, 3),
-                "text": _strip_punctuation(item.translation or "") if strip_punctuation else (item.translation or ""),
+                "text": _strip_punctuation(item.translation or "")
+                if strip_punctuation
+                else (item.translation or ""),
             }
             for item in items
         ]
@@ -253,7 +257,7 @@ def parse_srt(path: str | Path) -> list[SubtitleItem]:
         seen_ids.add(cue_id)
 
         start, end = _parse_srt_timing_line(lines[timing_idx])
-        text = "\n".join(lines[timing_idx + 1:]).strip()
+        text = "\n".join(lines[timing_idx + 1 :]).strip()
         if not text:
             continue
         items.append(SubtitleItem(id=cue_id, start=start, end=end, text=text))
@@ -307,14 +311,28 @@ def parse_lrc(path: str | Path) -> LrcData:
 
 
 def format_lrc_timestamp(seconds: float) -> str:
-    minutes, secs = divmod(max(0.0, seconds), 60.0)
-    return f"[{int(minutes):02d}:{secs:05.2f}]"
+    """Format seconds as an LRC ``[mm:ss.xx]`` timestamp.
+
+    Centiseconds are rounded like the SRT/VTT formatters, and the carry from
+    ``59.99x`` to the next minute is applied explicitly so the result never
+    contains a non-normalized ``[mm:60.xx]`` second field.
+    """
+    total_centiseconds = int(round(max(0.0, seconds) * 100))
+    total_seconds, centiseconds = divmod(total_centiseconds, 100)
+    minutes, secs = divmod(total_seconds, 60)
+    return f"[{minutes:02d}:{secs:02d}.{centiseconds:02d}]"
 
 
-def render_lrc(items: list[SubtitleItem], metadata: list[str] | None = None) -> str:
+def render_lrc(
+    items: list[SubtitleItem],
+    metadata: list[str] | None = None,
+    *,
+    strip_punctuation: bool = False,
+) -> str:
     lines = list(metadata or [])
     for item in items:
-        lines.append(f"{format_lrc_timestamp(item.start)}{item.text}")
+        text = _strip_punctuation(item.text) if strip_punctuation else item.text
+        lines.append(f"{format_lrc_timestamp(item.start)}{text}")
     return "\n".join(lines) + "\n"
 
 
@@ -322,8 +340,13 @@ def write_lrc(
     path: str | Path,
     items: list[SubtitleItem],
     metadata: list[str] | None = None,
+    *,
+    strip_punctuation: bool = False,
 ) -> Path:
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(render_lrc(items, metadata), encoding="utf-8")
+    path.write_text(
+        render_lrc(items, metadata, strip_punctuation=strip_punctuation),
+        encoding="utf-8",
+    )
     return path

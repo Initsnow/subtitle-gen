@@ -90,7 +90,9 @@ class LocalSegmenter:
         tokens = project_context_punctuation(tokens, context_text)
         atoms = atomize_tokens(tokens)
         if not atoms:
-            return LocalSegmentation(atoms=[], groups=[], language=_normalize_language(language, ""))
+            return LocalSegmentation(
+                atoms=[], groups=[], language=_normalize_language(language, "")
+            )
 
         source_text = join_text_parts([atom.text for atom in atoms])
         resolved_language = _normalize_language(language, context_text or source_text)
@@ -201,21 +203,18 @@ def _split_group(
     right = group[split_index:]
     if not left or not right:
         return [group]
-    return (
-        _split_group(
-            left,
-            by_id,
-            config,
-            language,
-            allow_weak_fallback=allow_weak_fallback,
-        )
-        + _split_group(
-            right,
-            by_id,
-            config,
-            language,
-            allow_weak_fallback=allow_weak_fallback,
-        )
+    return _split_group(
+        left,
+        by_id,
+        config,
+        language,
+        allow_weak_fallback=allow_weak_fallback,
+    ) + _split_group(
+        right,
+        by_id,
+        config,
+        language,
+        allow_weak_fallback=allow_weak_fallback,
     )
 
 
@@ -254,9 +253,8 @@ def _best_split_index(
         left_share = left_metrics.length / max(metrics.length, 1)
         balance_penalty = abs(left_share - 0.5) * 30.0
         min_duration_penalty = _min_duration_penalty(left_metrics, right_metrics, config)
-        overflow_penalty = (
-            _overflow_penalty(left_metrics, config, language)
-            + _overflow_penalty(right_metrics, config, language)
+        overflow_penalty = _overflow_penalty(left_metrics, config, language) + _overflow_penalty(
+            right_metrics, config, language
         )
         weak_bonus = 1.0 if boundary_score <= 0.0 else 0.0
         score = boundary_score + weak_bonus - balance_penalty - min_duration_penalty
@@ -285,7 +283,9 @@ def _merge_short_groups(
             index += 1
             continue
 
-        if index + 1 < len(groups) and _can_merge(group, groups[index + 1], by_id, config, language):
+        if index + 1 < len(groups) and _can_merge(
+            group, groups[index + 1], by_id, config, language
+        ):
             merged.append(group + groups[index + 1])
             index += 2
             continue
@@ -309,10 +309,7 @@ def _can_merge(
     combined = left + right
     metrics = _group_metrics(combined, by_id, language)
     max_chars = _max_total_chars(config, language)
-    return (
-        metrics.duration <= config.max_duration
-        and metrics.length <= max_chars
-    )
+    return metrics.duration <= config.max_duration and metrics.length <= max_chars
 
 
 def _needs_split(
@@ -322,16 +319,14 @@ def _needs_split(
     language: str,
 ) -> bool:
     metrics = _group_metrics(group, by_id, language)
-    return (
-        metrics.duration > config.max_duration
-        or metrics.length > _max_total_chars(config, language)
+    return metrics.duration > config.max_duration or metrics.length > _max_total_chars(
+        config, language
     )
 
 
 def _is_hard_over_limit(metrics: GroupMetrics, config: SegmentConfig, language: str) -> bool:
-    return (
-        metrics.duration > config.max_duration * 1.10
-        or metrics.length > _max_total_chars(config, language)
+    return metrics.duration > config.max_duration * 1.10 or metrics.length > _max_total_chars(
+        config, language
     )
 
 
@@ -355,9 +350,7 @@ def _boundary_score(
     return score
 
 
-def _min_duration_penalty(
-    left: GroupMetrics, right: GroupMetrics, config: SegmentConfig
-) -> float:
+def _min_duration_penalty(left: GroupMetrics, right: GroupMetrics, config: SegmentConfig) -> float:
     penalty = 0.0
     if left.duration < config.min_duration:
         penalty += (config.min_duration - left.duration) / max(config.min_duration, 0.001) * 35.0

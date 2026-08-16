@@ -87,6 +87,31 @@ def test_cleanup_cache_removes_stale_chunks_for_current_media(tmp_path):
     assert not stale_asr.exists()
 
 
+def test_cleanup_cache_removes_stale_refine_artifacts(tmp_path):
+    active = AudioWindow(index=1, start=0.0, end=2.0)
+    active_files = [
+        tmp_path / "refine" / "media" / "chunk-00001-0.000-2.000.wav",
+        tmp_path / "refine" / "media" / "chunk-00001-0.000-2.000.json",
+    ]
+    stale_files = [
+        tmp_path / "refine" / "media" / "chunk-00002-2.000-4.000.wav",
+        tmp_path / "refine" / "media" / "chunk-00002-2.000-4.000.json",
+    ]
+    for path in active_files + stale_files:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("cache", encoding="utf-8")
+
+    cleanup_cache(
+        tmp_path,
+        keep_media_ids={"media"},
+        active_refine_windows_by_media={"media": [active]},
+        max_media_entries=12,
+    )
+
+    assert all(path.exists() for path in active_files)
+    assert all(not path.exists() for path in stale_files)
+
+
 def test_cleanup_cache_prunes_old_media_entries(tmp_path):
     for index, media_id in enumerate(("old", "current", "new"), start=1):
         audio = tmp_path / "audio" / f"{media_id}.16k-mono.wav"

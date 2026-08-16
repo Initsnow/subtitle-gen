@@ -6,23 +6,14 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
-from .aligner import QwenForcedAligner
-from .asr import QwenASR
-from .cache import (
-    asr_cache_path,
-    cleanup_cache,
-    load_cached_alignment_tokens,
-    load_cached_asr_result,
-    media_cache_id,
-    save_alignment_tokens,
-    save_asr_result,
-)
+from .cache import cleanup_cache, media_cache_id
 from .config import AppConfig
 from .hybrid_segmenter import HybridSegmenter
 from .llm import OpenAICompatibleLLM
 from .llm_segmenter import LLMSegmenter, SegmentChunkInput
 from .local_segmenter import LocalSegmenter
-from .media import cut_wav_window, extract_wav, probe_duration
+from .media import extract_wav, probe_duration
+from .processing import format_duration as _format_duration, process_windows, report as _report
 from .segmenter import project_context_punctuation
 from .proofreader import SubtitleProofreader
 from .translator import SubtitleTranslator
@@ -102,7 +93,6 @@ class SubtitlePipeline:
             overwrite=options.overwrite_cache or not cache_enabled,
         )
         media_id = media_cache_id(wav_path)
-        chunk_cache = cache_root / "chunks" / media_id
         _report(progress, "probing audio duration")
         duration = probe_duration(wav_path)
         _report(progress, "planning speech windows")
@@ -120,113 +110,36 @@ class SubtitlePipeline:
                 max_media_entries=self.config.cache.max_media_entries,
             )
 
-        asr: QwenASR | None = None
-        aligner: QwenForcedAligner | None = None
+        processed = process_windows(
+            wav_path,
+            cache_root,
+            self.config,
+            windows,
+            language=self.config.model.language,
+            progress=progress,
+            overwrite_cache=options.overwrite_cache,
+            with_alignment=segment_mode != "none",
+        )
 
         chunks: list[TranscriptChunk] = []
         aligned_chunks: list[AlignedChunk] = []
-        total_windows = len(windows)
-        for window_position, window in enumerate(windows, start=1):
-            _report(
-                progress,
-                (
-                    f"chunk {window_position}/{total_windows} "
-                    f"{_format_duration(window.start)}-{_format_duration(window.end)}"
-                ),
-            )
-            chunk_path = cut_wav_window(
-                wav_path,
-                window,
-                chunk_cache,
-                overwrite=options.overwrite_cache or not cache_enabled,
-            )
-            chunk_asr_cache_path = asr_cache_path(cache_root, media_id, window)
-            asr_result = None
-            if cache_enabled and not options.overwrite_cache:
-                asr_result = load_cached_asr_result(
-                    chunk_asr_cache_path,
-                    model_id=self.config.model.asr_model,
-                    language_hint=self.config.model.language,
-                )
-            if asr_result is None:
-                if asr is None:
-                    _report(progress, f"loading ASR model: {self.config.model.asr_model}")
-                    asr = QwenASR(
-                        model_id=self.config.model.asr_model,
-                        device_map=self.config.model.device_map,
-                        dtype=self.config.model.dtype,
-                        compile_model=self.config.performance.compile_asr,
-                    )
-                _report(progress, f"chunk {window_position}/{total_windows}: transcribing")
-                asr_result = asr.transcribe(chunk_path, language=self.config.model.language)
-                if cache_enabled:
-                    save_asr_result(
-                        chunk_asr_cache_path,
-                        window=window,
-                        model_id=self.config.model.asr_model,
-                        language_hint=self.config.model.language,
-                        result=asr_result,
-                    )
-            else:
-                _report(progress, f"chunk {window_position}/{total_windows}: ASR cache hit")
-            chunk_language = self.config.model.language or asr_result.language
+        for processed_window in processed.windows:
             transcript_chunk = TranscriptChunk(
-                index=window.index,
-                start=window.start,
-                end=window.end,
-                text=asr_result.text,
-                language=chunk_language,
+                index=processed_window.window.index,
+                start=processed_window.window.start,
+                end=processed_window.window.end,
+                text=processed_window.transcript,
+                language=processed_window.language,
             )
             chunks.append(transcript_chunk)
 
-            if segment_mode != "none":
-                alignment_language = chunk_language or "English"
-                local_tokens = None
-                if cache_enabled and not options.overwrite_cache:
-                    local_tokens = load_cached_alignment_tokens(
-                        chunk_asr_cache_path,
-                        model_id=self.config.model.aligner_model,
-                        language=alignment_language,
-                        transcript=asr_result.text,
-                    )
-                if local_tokens is None:
-                    if aligner is None:
-                        _report(
-                            progress,
-                            f"loading aligner model: {self.config.model.aligner_model}",
-                        )
-                        aligner = QwenForcedAligner(
-                            model_id=self.config.model.aligner_model,
-                            device_map=self.config.model.device_map,
-                            dtype=self.config.model.dtype,
-                            compile_model=self.config.performance.compile_aligner,
-                        )
-                    _report(progress, f"chunk {window_position}/{total_windows}: aligning")
-                    local_tokens = aligner.align(
-                        chunk_path,
-                        asr_result.text,
-                        language=alignment_language,
-                    )
-                    if cache_enabled:
-                        save_alignment_tokens(
-                            chunk_asr_cache_path,
-                            window=window,
-                            model_id=self.config.model.aligner_model,
-                            language=alignment_language,
-                            transcript=asr_result.text,
-                            tokens=local_tokens,
-                        )
-                else:
-                    _report(
-                        progress,
-                        (
-                            f"chunk {window_position}/{total_windows}: "
-                            f"alignment cache hit ({len(local_tokens)} tokens)"
-                        ),
-                    )
+            if processed_window.local_tokens is not None:
                 global_tokens = project_context_punctuation(
-                    [token.shifted(window.start) for token in local_tokens],
-                    asr_result.text,
+                    [
+                        token.shifted(processed_window.window.start)
+                        for token in processed_window.local_tokens
+                    ],
+                    processed_window.transcript,
                 )
                 aligned_chunks.append(
                     AlignedChunk(transcript=transcript_chunk, tokens=global_tokens)
@@ -289,9 +202,7 @@ class SubtitlePipeline:
                     for chunk in segment_inputs
                 ]
             subtitles = [
-                subtitle
-                for segmented_chunk in segmented_chunks
-                for subtitle in segmented_chunk
+                subtitle for segmented_chunk in segmented_chunks for subtitle in segmented_chunk
             ]
         else:
             subtitles = _subtitles_from_transcript_chunks(chunks)
@@ -349,19 +260,6 @@ def _renumber_subtitles(subtitles: list[SubtitleItem]) -> list[SubtitleItem]:
         )
         for index, subtitle in enumerate(subtitles, start=1)
     ]
-
-
-def _report(progress: ProgressCallback | None, message: str) -> None:
-    if progress is not None:
-        progress(message)
-
-
-def _format_duration(seconds: float) -> str:
-    minutes, secs = divmod(max(0.0, seconds), 60.0)
-    hours, minutes = divmod(int(minutes), 60)
-    if hours:
-        return f"{hours:d}:{minutes:02d}:{secs:04.1f}"
-    return f"{minutes:02d}:{secs:04.1f}"
 
 
 def _report_limit_summary(

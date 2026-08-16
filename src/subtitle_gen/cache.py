@@ -142,8 +142,7 @@ def save_alignment_tokens(
         "language": language,
         "transcript_sha1": _text_sha1(transcript),
         "tokens": [
-            {"text": token.text, "start": token.start, "end": token.end}
-            for token in tokens
+            {"text": token.text, "start": token.start, "end": token.end} for token in tokens
         ],
     }
     _write_cache(path, data)
@@ -154,6 +153,7 @@ def cleanup_cache(
     *,
     keep_media_ids: set[str],
     active_windows_by_media: dict[str, list[AudioWindow]] | None = None,
+    active_refine_windows_by_media: dict[str, list[AudioWindow]] | None = None,
     max_media_entries: int = 12,
 ) -> None:
     root = Path(cache_root)
@@ -174,6 +174,16 @@ def cleanup_cache(
             suffix=ASR_CACHE_SUFFIX,
             cache_root=root,
         )
+
+    for media_id, active_windows in (active_refine_windows_by_media or {}).items():
+        active_stems = {chunk_cache_stem(window) for window in active_windows}
+        for suffix in (CHUNK_AUDIO_SUFFIX, ASR_CACHE_SUFFIX):
+            _remove_stale_children(
+                root / "refine" / media_id,
+                active_stems=active_stems,
+                suffix=suffix,
+                cache_root=root,
+            )
 
     if max_media_entries <= 0:
         return
@@ -259,7 +269,7 @@ def _collect_media_ids(root: Path) -> set[str]:
             if child.is_file() and child.name.endswith(AUDIO_CACHE_SUFFIX):
                 media_ids.add(media_cache_id(child))
 
-    for section in ("chunks", "asr"):
+    for section in ("chunks", "asr", "refine"):
         section_dir = root / section
         if not section_dir.exists():
             continue
@@ -274,6 +284,7 @@ def _media_cache_mtime(root: Path, media_id: str) -> float:
         root / "audio" / f"{media_id}{AUDIO_CACHE_SUFFIX}",
         root / "chunks" / media_id,
         root / "asr" / media_id,
+        root / "refine" / media_id,
     ]
     mtimes: list[float] = []
     for candidate in candidates:
@@ -289,6 +300,7 @@ def _remove_media_cache(root: Path, media_id: str) -> None:
     _safe_unlink(root / "audio" / f"{media_id}{AUDIO_CACHE_SUFFIX}", root)
     _safe_rmtree(root / "chunks" / media_id, root)
     _safe_rmtree(root / "asr" / media_id, root)
+    _safe_rmtree(root / "refine" / media_id, root)
 
 
 def _safe_unlink(path: Path, cache_root: Path) -> None:

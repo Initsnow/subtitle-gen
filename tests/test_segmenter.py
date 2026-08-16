@@ -115,9 +115,7 @@ def test_local_segmenter_keeps_blingfire_sentence_without_refinement():
         SegmentConfig(mode="blingfire", max_chars_en=20, max_lines=1)
     ).segment(tokens, language="English")
 
-    assert [segment.text for segment in segments] == [
-        "This is quite long, but it stays together."
-    ]
+    assert [segment.text for segment in segments] == ["This is quite long, but it stays together."]
 
 
 def test_hybrid_segmenter_soft_splits_before_overlong_llm():
@@ -165,9 +163,9 @@ def test_local_segmenter_merges_too_short_sentences():
         TimedToken("now.", 0.8, 1.5),
     ]
 
-    segments = LocalSegmenter(
-        SegmentConfig(mode="local", min_duration=0.8)
-    ).segment(tokens, language="English")
+    segments = LocalSegmenter(SegmentConfig(mode="local", min_duration=0.8)).segment(
+        tokens, language="English"
+    )
 
     assert [segment.text for segment in segments] == ["Yes. Go now."]
 

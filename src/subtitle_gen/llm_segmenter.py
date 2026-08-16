@@ -62,9 +62,7 @@ class LLMSegmenter:
     def segment(
         self, tokens: list[TimedToken], context_text: str | None = None
     ) -> list[SubtitleItem]:
-        return asyncio.run(
-            self.segment_async(tokens=tokens, context_text=context_text)
-        )
+        return asyncio.run(self.segment_async(tokens=tokens, context_text=context_text))
 
     async def segment_async(
         self, tokens: list[TimedToken], context_text: str | None = None
@@ -97,7 +95,9 @@ class LLMSegmenter:
         sorted_results = sorted(chunk_results, key=lambda item: item[0])
 
         subtitles_by_chunk: list[list[SubtitleItem]] = []
-        for (_index, groups, boundary_times), atoms in zip(sorted_results, chunk_atoms, strict=True):
+        for (_index, groups, boundary_times), atoms in zip(
+            sorted_results, chunk_atoms, strict=True
+        ):
             subtitles = segments_from_atom_groups(groups, atoms)
             _apply_boundary_times(subtitles, boundary_times)
             subtitles_by_chunk.append(subtitles)
@@ -162,9 +162,7 @@ def build_delimiter_prompt(
         "Prefer complete natural clauses over fixed-length chopping.",
     ]
     if require_split:
-        requirements.append(
-            "This source is over subtitle limits; insert at least one |."
-        )
+        requirements.append("This source is over subtitle limits; insert at least one |.")
     if context_text:
         requirements.append("Use the context only to understand sentence boundaries.")
     lines = ["Requirements:"]
@@ -284,9 +282,7 @@ def _groups_with_proportional_times(
     return groups, snapped_times if len(snapped_times) == len(groups) - 1 else None
 
 
-def _compute_boundary_times(
-    split_offsets: list[int], atoms: list[SegmentAtom]
-) -> dict[int, float]:
+def _compute_boundary_times(split_offsets: list[int], atoms: list[SegmentAtom]) -> dict[int, float]:
     """Map each delimiter character offset to a proportional time within its token."""
     normalized_texts = [normalize_for_mapping(a.text) for a in atoms]
     atom_lengths = [len(t) for t in normalized_texts]

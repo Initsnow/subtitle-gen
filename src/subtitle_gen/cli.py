@@ -33,6 +33,7 @@ def main(argv: list[str] | None = None) -> int:
 # pipeline (default)
 # ---------------------------------------------------------------------------
 
+
 def _cmd_pipeline(argv: list[str]) -> int:
     parser = _build_pipeline_parser()
     args = parser.parse_args(argv)
@@ -103,14 +104,18 @@ def _build_pipeline_parser() -> argparse.ArgumentParser:
         choices=["none", "blingfire", "local", "hybrid", "llm"],
         help="Subtitle segmentation mode. Defaults to [segment].mode.",
     )
-    parser.add_argument("--translate", metavar="LANG", help="Translate subtitles to target language.")
+    parser.add_argument(
+        "--translate", metavar="LANG", help="Translate subtitles to target language."
+    )
     parser.add_argument(
         "--bilingual",
         action="store_true",
         help="Also write a bilingual subtitle file alongside the translation.",
     )
     parser.add_argument("--asr-model", help="Override ASR model id.")
-    parser.add_argument("--low-vram", action="store_true", help="Use the configured low-VRAM ASR model.")
+    parser.add_argument(
+        "--low-vram", action="store_true", help="Use the configured low-VRAM ASR model."
+    )
     parser.add_argument("--language", help="Source language hint for ASR and forced alignment.")
     parser.add_argument("--device-map", default=None, help="Transformers device_map override.")
     parser.add_argument("--llm-model", help="LLM model name for segmentation/translation.")
@@ -174,6 +179,7 @@ def _build_pipeline_parser() -> argparse.ArgumentParser:
 # proofread
 # ---------------------------------------------------------------------------
 
+
 def _cmd_proofread(argv: list[str]) -> int:
     parser = argparse.ArgumentParser(
         prog="subtitle-gen proofread",
@@ -189,7 +195,9 @@ def _cmd_proofread(argv: list[str]) -> int:
 
     try:
         config = load_config(args.config)
-        llm_config = _llm_config_with_overrides(config.llm, args.llm_model, args.llm_concurrency, args.batch_size)
+        llm_config = _llm_config_with_overrides(
+            config.llm, args.llm_model, args.llm_concurrency, args.batch_size
+        )
         items = parse_srt(args.input)
         if not items:
             print("subtitle-gen proofread: no cues found in input file.", file=sys.stderr)
@@ -201,7 +209,9 @@ def _cmd_proofread(argv: list[str]) -> int:
             llm = OpenAICompatibleLLM(llm_config)
             corrected = SubtitleProofreader(llm, llm_config, progress=progress).proofread(items)
             progress("writing output")
-            _write_srt_output(out_path, corrected, "proofread", strip_punctuation=config.output.strip_punctuation)
+            _write_srt_output(
+                out_path, corrected, "proofread", strip_punctuation=config.output.strip_punctuation
+            )
             progress("done")
         print(out_path)
         return 0
@@ -213,6 +223,7 @@ def _cmd_proofread(argv: list[str]) -> int:
 # ---------------------------------------------------------------------------
 # translate (standalone SRT)
 # ---------------------------------------------------------------------------
+
 
 def _cmd_translate(argv: list[str]) -> int:
     parser = argparse.ArgumentParser(
@@ -235,7 +246,9 @@ def _cmd_translate(argv: list[str]) -> int:
 
     try:
         config = load_config(args.config)
-        llm_config = _llm_config_with_overrides(config.llm, args.llm_model, args.llm_concurrency, args.batch_size)
+        llm_config = _llm_config_with_overrides(
+            config.llm, args.llm_model, args.llm_concurrency, args.batch_size
+        )
         items = parse_srt(args.input)
         if not items:
             print("subtitle-gen translate: no cues found in input file.", file=sys.stderr)
@@ -251,10 +264,20 @@ def _cmd_translate(argv: list[str]) -> int:
                 items, target_language=args.target
             )
             progress("writing output")
-            _write_srt_output(out_path, translated, "translation", strip_punctuation=config.output.strip_punctuation)
+            _write_srt_output(
+                out_path,
+                translated,
+                "translation",
+                strip_punctuation=config.output.strip_punctuation,
+            )
             if args.bilingual:
                 bilingual_path = _bilingual_out(out_path)
-                _write_srt_output(bilingual_path, translated, "bilingual", strip_punctuation=config.output.strip_punctuation)
+                _write_srt_output(
+                    bilingual_path,
+                    translated,
+                    "bilingual",
+                    strip_punctuation=config.output.strip_punctuation,
+                )
                 progress("done")
                 print(out_path)
                 print(bilingual_path)
@@ -270,6 +293,7 @@ def _cmd_translate(argv: list[str]) -> int:
 # ---------------------------------------------------------------------------
 # align (untimed text/LRC -> timed subtitles)
 # ---------------------------------------------------------------------------
+
 
 def _cmd_align(argv: list[str]) -> int:
     parser = argparse.ArgumentParser(
@@ -290,7 +314,9 @@ def _cmd_align(argv: list[str]) -> int:
     parser.add_argument("--config", help="TOML config path. Defaults to ./config.toml if present.")
     parser.add_argument("--language", help="Source language hint for ASR and forced alignment.")
     parser.add_argument("--asr-model", help="Override ASR model id.")
-    parser.add_argument("--low-vram", action="store_true", help="Use the configured low-VRAM ASR model.")
+    parser.add_argument(
+        "--low-vram", action="store_true", help="Use the configured low-VRAM ASR model."
+    )
     parser.add_argument("--device-map", default=None, help="Transformers device_map override.")
     cache = parser.add_mutually_exclusive_group()
     cache.add_argument(
@@ -320,7 +346,7 @@ def _cmd_align(argv: list[str]) -> int:
     parser.add_argument(
         "--no-vad",
         action="store_true",
-        help="Disable VAD and align the whole audio with fixed-size windows (use for songs).",
+        help="Disable VAD and use overlapping fixed-size windows for the whole audio (use for songs).",
     )
 
     compile_aligner = parser.add_mutually_exclusive_group()
@@ -351,6 +377,9 @@ def _cmd_align(argv: list[str]) -> int:
         help="Disable ASR torch.compile.",
     )
     args = parser.parse_args(argv)
+
+    if args.out and args.formats:
+        parser.error("--out and --format are mutually exclusive")
 
     try:
         config = load_config(args.config)
@@ -391,7 +420,7 @@ def _cmd_align(argv: list[str]) -> int:
                 strip_punctuation=config.output.strip_punctuation,
             )
             progress(f"wrote {len(written)} file(s)")
-    except (ConfigError, FormatError, Exception) as exc:
+    except Exception as exc:
         print(f"subtitle-gen align: {exc}", file=sys.stderr)
         return 1
 
@@ -411,7 +440,7 @@ def _write_align_outputs(
         return [_write_align_file(args.out, items, metadata, strip_punctuation=strip_punctuation)]
 
     text_path = Path(args.text)
-    formats = args.formats or ["lrc"]
+    formats = list(dict.fromkeys(args.formats or ["lrc"]))
     written: list[Path] = []
     for subtitle_format in formats:
         out_path = text_path.with_suffix(f".timed.{subtitle_format}")
@@ -430,13 +459,14 @@ def _write_align_file(
 ) -> Path:
     extension = path.suffix.lower().lstrip(".")
     if extension == "lrc":
-        return write_lrc(path, items, metadata)
+        return write_lrc(path, items, metadata, strip_punctuation=strip_punctuation)
     return write_subtitles(path, items, "original", strip_punctuation=strip_punctuation)
 
 
 # ---------------------------------------------------------------------------
 # helpers
 # ---------------------------------------------------------------------------
+
 
 def _write_srt_output(
     path: Path, items: list[SubtitleItem], mode: str, *, strip_punctuation: bool = False
@@ -479,9 +509,23 @@ def _write_outputs(
 
     if args.out:
         out_path = Path(args.out)
-        written = [_write_srt_output(out_path, subtitles, "translation" if args.translate else "original", strip_punctuation=strip_punctuation)]
+        written = [
+            _write_srt_output(
+                out_path,
+                subtitles,
+                "translation" if args.translate else "original",
+                strip_punctuation=strip_punctuation,
+            )
+        ]
         if args.translate and args.bilingual:
-            written.append(_write_srt_output(_bilingual_out(out_path), subtitles, "bilingual", strip_punctuation=strip_punctuation))
+            written.append(
+                _write_srt_output(
+                    _bilingual_out(out_path),
+                    subtitles,
+                    "bilingual",
+                    strip_punctuation=strip_punctuation,
+                )
+            )
         return written
 
     out_dir = Path(args.out_dir) if args.out_dir else input_path.parent

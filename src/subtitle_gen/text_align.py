@@ -1,23 +1,28 @@
 from __future__ import annotations
 
+import re
 import tempfile
 import unicodedata
 from collections.abc import Callable
 from pathlib import Path
 
-from .aligner import QwenForcedAligner
-from .asr import QwenASR
+from .aligner import AlignmentError, QwenForcedAligner
 from .cache import (
-    asr_cache_path,
+    chunk_cache_stem,
+    cleanup_cache,
     load_cached_alignment_tokens,
-    load_cached_asr_result,
     media_cache_id,
     save_alignment_tokens,
-    save_asr_result,
 )
 from .config import AppConfig
 from .formats import parse_lrc
 from .media import cut_wav_window, extract_wav, probe_duration
+from .processing import (
+    ProcessedWindow,
+    format_duration as _format_duration,
+    process_windows,
+    report as _report,
+)
 from .types import AudioWindow, SubtitleItem, TimedToken
 from .vad import plan_audio_windows
 
@@ -26,31 +31,50 @@ ProgressCallback = Callable[[str], None]
 # Fixed-window size used when VAD is disabled (e.g. for songs, where Silero VAD
 # misses sung vocals). VAD stays the default for speech-like audio.
 ALIGN_WINDOW_SECONDS = 30.0
+# Adjacent fixed windows overlap by this amount so words sitting exactly on a
+# window boundary are recognized by at least one full chunk.
+_FIXED_WINDOW_OVERLAP = 1.0
 _REFINE_PADDING = 0.5
 # Tokens further than this from both neighbours are treated as ASR
 # hallucinations on instrumental/silent stretches and dropped before matching.
 _SPURIOUS_GAP = 3.0
+# Full Needleman-Wunsch is exact but quadratic. Above this cell count we switch
+# to the banded implementation, whose half-width is chosen below and capped so
+# long audio stays bounded in both time and memory.
+_ALIGN_FULL_MAX_CELLS = 2_000_000
+_ALIGN_BAND_MAX_CELLS = 24_000_000
+_ALIGN_BAND_MIN = 64
+_ALIGN_BAND_RATIO = 0.05
+# LRC tags whose values describe the *previous* timing. Regenerating timestamps
+# makes them stale (offset would be applied twice by players), so they are not
+# carried into aligned output.
+_LRC_TIMING_METADATA_TAGS = frozenset({"length", "offset"})
+_LRC_TAG_RE = re.compile(r"^\[([A-Za-z]+):")
 
 
 def load_text_input(path: str | Path) -> tuple[list[str], list[str]]:
     """Load untimed subtitle text from a file.
 
-    Returns ``(metadata_lines, text_lines)``. LRC files keep their metadata
-    tags (``[ti:...]`` etc.); any other file is treated as plain text with one
+    Returns ``(metadata_lines, text_lines)``. LRC files keep descriptive
+    metadata tags (``[ti:...]``, ``[ar:...]``, ...); timing-affecting tags such
+    as ``[offset:...]`` and ``[length:...]`` are dropped because alignment
+    regenerates timestamps. Any other file is treated as plain text with one
     cue per line.
     """
     input_path = Path(path)
     if input_path.suffix.lower() == ".lrc":
         data = parse_lrc(input_path)
-        return data.metadata, data.lines
+        metadata = [line for line in data.metadata if not _is_timing_lrc_metadata(line)]
+        return metadata, data.lines
 
-    content = (
-        input_path.read_text(encoding="utf-8-sig")
-        .replace("\r\n", "\n")
-        .replace("\r", "\n")
-    )
+    content = input_path.read_text(encoding="utf-8-sig").replace("\r\n", "\n").replace("\r", "\n")
     lines = [line.strip() for line in content.split("\n") if line.strip()]
     return [], lines
+
+
+def _is_timing_lrc_metadata(line: str) -> bool:
+    tag = _LRC_TAG_RE.match(line)
+    return tag is not None and tag.group(1).lower() in _LRC_TIMING_METADATA_TAGS
 
 
 def normalize_for_alignment(text: str, language: str | None = None) -> str:
@@ -101,6 +125,8 @@ def align_lines_to_audio(
             progress=progress,
             overwrite_cache=overwrite_cache,
         )
+        if duration <= 0:
+            raise AlignmentError(f"audio has no usable duration: {duration:g} seconds")
         tokens, detected_language, aligner = _transcribe_and_align(
             wav_path,
             cache_root,
@@ -114,6 +140,27 @@ def align_lines_to_audio(
         match_language = language or detected_language
         viable_tokens = _filter_spurious_tokens(tokens)
         spans = match_lines_to_tokens(lines, viable_tokens, language=match_language)
+        if not any(span is not None for span in spans) and tokens:
+            # The hallucination filter may have removed every candidate for a
+            # short, sparse utterance. Retry once with the unfiltered stream
+            # before giving up, so a single real word is not discarded.
+            _report(
+                progress,
+                "spurious token filter removed all matches; retrying with unfiltered tokens",
+            )
+            spans = match_lines_to_tokens(lines, tokens, language=match_language)
+
+        if not any(span is not None for span in spans):
+            raise AlignmentError(
+                "no recognized speech tokens could be matched to the input text; "
+                "check --language or try a different audio file"
+            )
+
+        matched_lines = sum(span is not None for span in spans)
+        _report(
+            progress,
+            f"matched {matched_lines}/{len(lines)} line(s) to recognized speech",
+        )
         rough = _finalize_spans(spans, duration)
 
         if refine:
@@ -126,6 +173,7 @@ def align_lines_to_audio(
                 duration=duration,
                 progress=progress,
                 aligner=aligner,
+                overwrite_cache=overwrite_cache,
             )
 
         return [
@@ -230,9 +278,7 @@ def _transcribe_and_align(
     use_vad: bool,
 ) -> tuple[list[TimedToken], str | None, QwenForcedAligner | None]:
     use_cache = config.cache.enabled
-    regenerate = overwrite_cache or not use_cache
     media_id = media_cache_id(wav_path)
-    chunk_cache = cache_root / "chunks" / media_id
     if use_vad:
         windows = plan_audio_windows(wav_path, duration, config.vad)
     else:
@@ -242,106 +288,57 @@ def _transcribe_and_align(
         f"audio: {_format_duration(duration)}; chunks: {len(windows)}; media id: {media_id}",
     )
 
-    asr: QwenASR | None = None
-    aligner: QwenForcedAligner | None = None
+    if use_cache and config.cache.cleanup_enabled:
+        _report(progress, "cleaning stale cache entries")
+        cleanup_cache(
+            cache_root,
+            keep_media_ids={media_id},
+            active_windows_by_media={media_id: windows},
+            max_media_entries=config.cache.max_media_entries,
+        )
+
+    processed = process_windows(
+        wav_path,
+        cache_root,
+        config,
+        windows,
+        language=language,
+        progress=progress,
+        overwrite_cache=overwrite_cache,
+        with_alignment=True,
+    )
+    tokens = _merge_window_tokens(processed.windows)
+    return tokens, processed.detected_language, processed.aligner
+
+
+def _merge_window_tokens(processed_windows: list[ProcessedWindow]) -> list[TimedToken]:
+    """Shift local tokens to media time and drop duplicates from overlapping
+    fixed windows.
+
+    When windows overlap, the tail of the previous window that starts inside
+    the overlap is removed and the current window's copy is kept. This keeps
+    every word once while still letting boundary words be recognized by a
+    window that contains their continuation.
+    """
     tokens: list[TimedToken] = []
-    detected_language: str | None = None
-    total_windows = len(windows)
-    for window_position, window in enumerate(windows, start=1):
-        _report(
-            progress,
-            (
-                f"chunk {window_position}/{total_windows} "
-                f"{_format_duration(window.start)}-{_format_duration(window.end)}"
-            ),
+    previous_window_end: float | None = None
+    for processed_window in processed_windows:
+        local_tokens = processed_window.local_tokens or []
+        cleaned = sorted(
+            (token for token in local_tokens if token.text.strip() and token.end >= token.start),
+            key=lambda token: (token.start, token.end),
         )
-        chunk_path = cut_wav_window(
-            wav_path,
-            window,
-            chunk_cache,
-            overwrite=regenerate,
-        )
-        chunk_cache_path = asr_cache_path(cache_root, media_id, window)
-
-        asr_result = None
-        if use_cache and not regenerate:
-            asr_result = load_cached_asr_result(
-                chunk_cache_path,
-                model_id=config.model.asr_model,
-                language_hint=language,
-            )
-        if asr_result is None:
-            if asr is None:
-                _report(progress, f"loading ASR model: {config.model.asr_model}")
-                asr = QwenASR(
-                    model_id=config.model.asr_model,
-                    device_map=config.model.device_map,
-                    dtype=config.model.dtype,
-                    compile_model=config.performance.compile_asr,
-                )
-            _report(progress, f"chunk {window_position}/{total_windows}: transcribing")
-            asr_result = asr.transcribe(chunk_path, language=language)
-            if use_cache:
-                save_asr_result(
-                    chunk_cache_path,
-                    window=window,
-                    model_id=config.model.asr_model,
-                    language_hint=language,
-                    result=asr_result,
-                )
-        else:
-            _report(progress, f"chunk {window_position}/{total_windows}: ASR cache hit")
-
-        chunk_language = language or asr_result.language
-        if detected_language is None and chunk_language:
-            detected_language = chunk_language
-        alignment_language = chunk_language or "English"
-
-        local_tokens = None
-        if use_cache and not regenerate:
-            local_tokens = load_cached_alignment_tokens(
-                chunk_cache_path,
-                model_id=config.model.aligner_model,
-                language=alignment_language,
-                transcript=asr_result.text,
-            )
-        if local_tokens is None:
-            if aligner is None:
-                _report(
-                    progress,
-                    f"loading aligner model: {config.model.aligner_model}",
-                )
-                aligner = QwenForcedAligner(
-                    model_id=config.model.aligner_model,
-                    device_map=config.model.device_map,
-                    dtype=config.model.dtype,
-                    compile_model=config.performance.compile_aligner,
-                )
-            _report(progress, f"chunk {window_position}/{total_windows}: aligning")
-            local_tokens = aligner.align(
-                chunk_path,
-                asr_result.text,
-                language=alignment_language,
-            )
-            if use_cache:
-                save_alignment_tokens(
-                    chunk_cache_path,
-                    window=window,
-                    model_id=config.model.aligner_model,
-                    language=alignment_language,
-                    transcript=asr_result.text,
-                    tokens=local_tokens,
-                )
-        else:
-            _report(
-                progress,
-                (
-                    f"chunk {window_position}/{total_windows}: "
-                    f"alignment cache hit ({len(local_tokens)} tokens)"
-                ),
-            )
-        tokens.extend(token.shifted(window.start) for token in local_tokens)
-    return tokens, detected_language, aligner
+        shifted = [token.shifted(processed_window.window.start) for token in cleaned]
+        if (
+            tokens
+            and previous_window_end is not None
+            and processed_window.window.start < previous_window_end - 1e-9
+        ):
+            while tokens and tokens[-1].start >= processed_window.window.start - 1e-9:
+                tokens.pop()
+        tokens.extend(shifted)
+        previous_window_end = processed_window.window.end
+    return tokens
 
 
 def _refine_lines(
@@ -354,44 +351,92 @@ def _refine_lines(
     duration: float,
     progress: ProgressCallback | None,
     aligner: QwenForcedAligner | None,
+    overwrite_cache: bool,
 ) -> list[SubtitleItem]:
     """Force-align each line's exact text to its own short audio window for
-    precise boundaries, falling back to the rough span when alignment fails."""
-    if aligner is None:
-        _report(progress, f"loading aligner model: {config.model.aligner_model}")
-        aligner = QwenForcedAligner(
-            model_id=config.model.aligner_model,
-            device_map=config.model.device_map,
-            dtype=config.model.dtype,
-            compile_model=config.performance.compile_aligner,
-        )
+    precise boundaries, falling back to the rough span when alignment fails.
 
-    refine_dir = wav_path.parent / "refine"
+    Refine chunks and alignments live under ``<cache>/refine/<media-id>/`` and
+    are reused on subsequent runs when the persistent cache is enabled.
+    """
+    use_cache = config.cache.enabled
+    media_id = media_cache_id(wav_path)
+    cache_root = wav_path.parent.parent
+    refine_dir = cache_root / "refine" / media_id
     alignment_language = language or "English"
     total = len(lines)
+    refine_windows = [_refine_window(index, rough, duration) for index in range(1, total + 1)]
+
+    if use_cache and config.cache.cleanup_enabled:
+        _report(progress, "cleaning stale refine cache entries")
+        cleanup_cache(
+            cache_root,
+            keep_media_ids={media_id},
+            active_refine_windows_by_media={media_id: refine_windows},
+            max_media_entries=config.cache.max_media_entries,
+        )
+
     items: list[SubtitleItem] = []
-    for index, (line, (rough_start, rough_end)) in enumerate(zip(lines, rough), start=1):
+    for index, (line, (rough_start, rough_end), window) in enumerate(
+        zip(lines, rough, refine_windows), start=1
+    ):
         start, end = rough_start, rough_end
         if line.strip():
-            window = _refine_window(index, rough, duration)
             chunk_path = cut_wav_window(
                 wav_path,
                 window,
                 refine_dir,
-                overwrite=True,
+                overwrite=overwrite_cache or not use_cache,
             )
-            try:
-                local_tokens = aligner.align(
-                    chunk_path,
-                    line,
+            refine_cache_path = refine_dir / f"{chunk_cache_stem(window)}.json"
+
+            local_tokens = None
+            if use_cache and not overwrite_cache:
+                local_tokens = load_cached_alignment_tokens(
+                    refine_cache_path,
+                    model_id=config.model.aligner_model,
                     language=alignment_language,
+                    transcript=line,
                 )
-            except Exception:
-                local_tokens = []
-            viable = [token for token in local_tokens if token.end - token.start > 0]
+            if local_tokens is None:
+                if aligner is None:
+                    _report(progress, f"loading aligner model: {config.model.aligner_model}")
+                    aligner = QwenForcedAligner(
+                        model_id=config.model.aligner_model,
+                        device_map=config.model.device_map,
+                        dtype=config.model.dtype,
+                        compile_model=config.performance.compile_aligner,
+                    )
+                alignment_failed = False
+                try:
+                    local_tokens = aligner.align(
+                        chunk_path,
+                        line,
+                        language=alignment_language,
+                    )
+                except Exception:
+                    local_tokens = []
+                    alignment_failed = True
+                if use_cache and not alignment_failed:
+                    save_alignment_tokens(
+                        refine_cache_path,
+                        window=window,
+                        model_id=config.model.aligner_model,
+                        language=alignment_language,
+                        transcript=line,
+                        tokens=local_tokens,
+                    )
+
+            viable = [
+                token
+                for token in local_tokens
+                if token.text.strip() and token.end - token.start > 0
+            ]
             if viable:
                 refined_start = viable[0].start + window.start
                 refined_end = viable[-1].end + window.start
+                refined_start = min(max(0.0, refined_start), duration)
+                refined_end = min(max(0.0, refined_end), duration)
                 if refined_end > refined_start:
                     start, end = refined_start, refined_end
         items.append(
@@ -455,9 +500,23 @@ def _filter_spurious_tokens(tokens: list[TimedToken]) -> list[TimedToken]:
     return kept
 
 
-def _plan_fixed_windows(duration: float, window_size: float) -> list[AudioWindow]:
+def _plan_fixed_windows(
+    duration: float,
+    window_size: float,
+    overlap: float | None = None,
+) -> list[AudioWindow]:
+    """Tile ``duration`` with fixed-size windows.
+
+    Adjacent windows overlap by ``_FIXED_WINDOW_OVERLAP`` seconds so words at
+    chunk boundaries are still seen in a full context by one of the chunks.
+    Callers are responsible for de-duplicating tokens from overlapping windows.
+    """
     if window_size <= 0:
         window_size = duration or 1.0
+    if overlap is None:
+        overlap = _FIXED_WINDOW_OVERLAP
+    overlap = min(max(0.0, overlap), max(0.0, window_size - 0.001))
+
     windows: list[AudioWindow] = []
     cursor = 0.0
     index = 1
@@ -472,7 +531,7 @@ def _plan_fixed_windows(duration: float, window_size: float) -> list[AudioWindow
                 )
             )
             index += 1
-        cursor = end
+        cursor = end if end >= duration else end - overlap
     if not windows:
         windows.append(AudioWindow(index=1, start=0.0, end=max(0.0, duration)))
     return windows
@@ -480,13 +539,46 @@ def _plan_fixed_windows(duration: float, window_size: float) -> list[AudioWindow
 
 def _align_chars(ref: str, asr: str) -> list[int | None]:
     """Global (Needleman-Wunsch) alignment mapping each ref char index to an
-    ASR char index, or ``None`` when the ref char aligns to a gap."""
+    ASR char index, or ``None`` when the ref char aligns to a gap.
+
+    Small inputs use the exact full-matrix implementation. Large inputs switch
+    to a bounded-width corridor so the cost stays ``O(n * band)`` instead of
+    ``O(n * m)``; if no corridor fits the budget the mapping falls back to all
+    gaps rather than allocating an unbounded matrix.
+    """
     n, m = len(ref), len(asr)
     if n == 0:
         return []
     if m == 0:
         return [None] * n
+    if n * m <= _ALIGN_FULL_MAX_CELLS:
+        return _align_chars_full(ref, asr)
 
+    band = _choose_alignment_band(n, m)
+    if band is None:
+        return [None] * n
+    return _align_chars_banded(ref, asr, band) or [None] * n
+
+
+def _choose_alignment_band(n: int, m: int) -> int | None:
+    """Pick a DP half-width for the corridor through an ``n`` by ``m`` matrix."""
+    band = max(_ALIGN_BAND_MIN, int(max(n, m) * _ALIGN_BAND_RATIO))
+    if m > n:
+        # The corridor must be wide enough for the horizontal slope; otherwise
+        # consecutive row bands become disconnected.
+        band = max(band, (m + n - 1) // n + 1)
+
+    max_by_cells = max(1, (_ALIGN_BAND_MAX_CELLS // n - 1) // 2)
+    if band > max_by_cells:
+        band = max_by_cells
+        if m > n and band < (m + n - 1) // n + 1:
+            return None
+    return max(1, band)
+
+
+def _align_chars_full(ref: str, asr: str) -> list[int | None]:
+    """Exact quadratic-space global alignment for small inputs."""
+    n, m = len(ref), len(asr)
     match_score, mismatch_score, gap_score = 2, -1, -2
     width = m + 1
     # Direction per cell: 1=diag, 2=up (gap in ASR), 3=left (gap in ref).
@@ -504,9 +596,7 @@ def _align_chars(ref: str, asr: str) -> list[int | None]:
         row_base = i * width
         ref_char = ref[i - 1]
         for j in range(1, width):
-            diag = prev[j - 1] + (
-                match_score if ref_char == asr[j - 1] else mismatch_score
-            )
+            diag = prev[j - 1] + (match_score if ref_char == asr[j - 1] else mismatch_score)
             up = prev[j] + gap_score
             left = curr[j - 1] + gap_score
             if diag >= up and diag >= left:
@@ -535,6 +625,81 @@ def _align_chars(ref: str, asr: str) -> list[int | None]:
         else:
             break
     return mapping
+
+
+def _align_chars_banded(ref: str, asr: str, band: int) -> list[int | None] | None:
+    """Cellular corridor alignment around the diagonal from ``(0, 0)`` to
+    ``(n, m)``. Returns ``None`` only if the corridor happened to disconnect."""
+    n, m = len(ref), len(asr)
+    match_score, mismatch_score, gap_score = 2, -1, -2
+    neg = -1e18
+    rows: list[bytearray] = []
+    prev: tuple[int, int, list[float]] | None = None
+
+    for i in range(n + 1):
+        lo, hi = _band_bounds(i, n, m, band)
+        width = hi - lo + 1
+        curr = [0.0] * width
+        directions = bytearray(width)
+
+        if i == 0:
+            for index, j in enumerate(range(lo, hi + 1)):
+                curr[index] = j * gap_score
+                if j > 0:
+                    directions[index] = 3
+        else:
+            assert prev is not None
+            plo, phi, prev_scores = prev
+            ref_char = ref[i - 1]
+            for index, j in enumerate(range(lo, hi + 1)):
+                diag = neg
+                if plo <= j - 1 <= phi:
+                    diag = prev_scores[j - 1 - plo] + (
+                        match_score if ref_char == asr[j - 1] else mismatch_score
+                    )
+                up = neg
+                if plo <= j <= phi:
+                    up = prev_scores[j - plo] + gap_score
+                left = neg
+                if index > 0:
+                    left = curr[index - 1] + gap_score
+
+                if diag >= up and diag >= left:
+                    curr[index] = diag
+                    directions[index] = 1
+                elif up >= left:
+                    curr[index] = up
+                    directions[index] = 2
+                else:
+                    curr[index] = left
+                    directions[index] = 3
+
+        rows.append(directions)
+        prev = (lo, hi, curr)
+
+    mapping: list[int | None] = [None] * n
+    i, j = n, m
+    while i > 0 or j > 0:
+        lo, hi = _band_bounds(i, n, m, band)
+        if not lo <= j <= hi:
+            return None
+        direction = rows[i][j - lo]
+        if direction == 1:
+            i -= 1
+            j -= 1
+            mapping[i] = j
+        elif direction == 2:
+            i -= 1
+        elif direction == 3:
+            j -= 1
+        else:
+            return None
+    return mapping
+
+
+def _band_bounds(i: int, n: int, m: int, band: int) -> tuple[int, int]:
+    center = (i * m + n // 2) // n
+    return max(0, center - band), min(m, center + band)
 
 
 def _finalize_spans(
@@ -594,25 +759,35 @@ def _finalize_spans(
                 ends[index + offset] = 1.0
         index = run_end
 
-    # Enforce monotonic starts and end >= start.
+    # Enforce monotonic starts.
     for position in range(1, total):
         if starts[position] < starts[position - 1]:
             starts[position] = starts[position - 1]
+
+    # Clamp to media duration and guarantee a positive cue duration. Moving a
+    # start back from the media edge can break monotonicity, so that is
+    # re-checked below.
     for position in range(total):
+        if starts[position] >= duration:
+            starts[position] = max(0.0, duration - 0.5)
+        if ends[position] > duration:
+            ends[position] = duration
         if ends[position] <= starts[position]:
-            ends[position] = starts[position] + 0.5
+            ends[position] = min(duration, starts[position] + 0.5)
+
+    for position in range(1, total):
+        if starts[position] < starts[position - 1]:
+            starts[position] = starts[position - 1]
+            if ends[position] <= starts[position]:
+                ends[position] = min(duration, starts[position] + 0.5)
 
     # Avoid overlaps by clamping each end to the next line's start.
     for position in range(total - 1):
         if ends[position] > starts[position + 1]:
             ends[position] = starts[position + 1]
 
-    # Clamp to media duration.
+    # The overlap clamp above may turn a tiny cue into a zero-length cue.
     for position in range(total):
-        if starts[position] > duration:
-            starts[position] = duration
-        if ends[position] > duration:
-            ends[position] = duration
         if ends[position] <= starts[position]:
             ends[position] = min(duration, starts[position] + 0.5)
 
@@ -628,19 +803,6 @@ def _katakana_to_hiragana(text: str) -> str:
         else:
             characters.append(char)
     return "".join(characters)
-
-
-def _report(progress: ProgressCallback | None, message: str) -> None:
-    if progress is not None:
-        progress(message)
-
-
-def _format_duration(seconds: float) -> str:
-    minutes, secs = divmod(max(0.0, seconds), 60.0)
-    hours, minutes = divmod(int(minutes), 60)
-    if hours:
-        return f"{hours:d}:{minutes:02d}:{secs:04.1f}"
-    return f"{minutes:02d}:{secs:04.1f}"
 
 
 __all__ = [

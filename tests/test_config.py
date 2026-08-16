@@ -1,6 +1,12 @@
 import pytest
 
-from subtitle_gen.config import ConfigError, DEFAULT_ASR_MODEL, AppConfig, apply_overrides, load_config
+from subtitle_gen.config import (
+    ConfigError,
+    DEFAULT_ASR_MODEL,
+    AppConfig,
+    apply_overrides,
+    load_config,
+)
 
 
 def test_load_config_uses_default_values_without_config_file(monkeypatch, tmp_path):

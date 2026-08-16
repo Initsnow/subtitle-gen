@@ -13,7 +13,9 @@ class VADError(RuntimeError):
     pass
 
 
-def plan_audio_windows(wav_path: str | Path, duration: float, config: VADConfig) -> list[AudioWindow]:
+def plan_audio_windows(
+    wav_path: str | Path, duration: float, config: VADConfig
+) -> list[AudioWindow]:
     if not config.enabled or duration <= config.short_audio_threshold:
         return [AudioWindow(index=1, start=0.0, end=max(0.0, duration))]
     if config.backend != "silero":
@@ -27,9 +29,7 @@ def detect_speech_silero(wav_path: str | Path, config: VADConfig) -> list[tuple[
     try:
         from silero_vad import get_speech_timestamps, load_silero_vad
     except ImportError as exc:
-        raise VADError(
-            "silero-vad is not installed. Run `uv sync` or disable VAD."
-        ) from exc
+        raise VADError("silero-vad is not installed. Run `uv sync` or disable VAD.") from exc
 
     model = load_silero_vad()
     wav = read_wav_tensor(wav_path, sampling_rate=16_000)

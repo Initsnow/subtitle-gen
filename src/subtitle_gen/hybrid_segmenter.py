@@ -80,9 +80,7 @@ class HybridSegmenter:
         )
 
         llm_outputs = (
-            await self.llm_segmenter.segment_chunks_async(llm_inputs)
-            if llm_inputs
-            else []
+            await self.llm_segmenter.segment_chunks_async(llm_inputs) if llm_inputs else []
         )
         replacements = {
             (ref.chunk_index, ref.group_index): output
@@ -131,7 +129,9 @@ def _is_llm_replacement_useful(
     if not replacement:
         return False
     original_text = _group_text(group, atoms)
-    if len(replacement) == 1 and _normalize_text(replacement[0].text) == _normalize_text(original_text):
+    if len(replacement) == 1 and _normalize_text(replacement[0].text) == _normalize_text(
+        original_text
+    ):
         return False
     return True
 

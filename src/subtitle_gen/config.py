@@ -224,9 +224,7 @@ def _merge_optional_llm(base: LLMConfig, data: Any) -> LLMConfig | None:
         return None
     if not isinstance(data, dict):
         raise ConfigError("[llm.segmentation] must be a TOML table.")
-    return _validate_llm_config(
-        _merge_dataclass(base, data, "llm.segmentation")
-    )
+    return _validate_llm_config(_merge_dataclass(base, data, "llm.segmentation"))
 
 
 def _validate_segment_config(config: SegmentConfig) -> SegmentConfig:

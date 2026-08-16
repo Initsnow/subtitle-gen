@@ -173,8 +173,7 @@ def _move_batch_to_model(inputs: Any, model: Any) -> Any:
             return inputs.to(device, dtype)
         return inputs.to(device)
     return {
-        key: value.to(device) if hasattr(value, "to") else value
-        for key, value in inputs.items()
+        key: value.to(device) if hasattr(value, "to") else value for key, value in inputs.items()
     }
 
 
