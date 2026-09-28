@@ -29,7 +29,9 @@ def detect_speech_silero(wav_path: str | Path, config: VADConfig) -> list[tuple[
     try:
         from silero_vad import get_speech_timestamps, load_silero_vad
     except ImportError as exc:
-        raise VADError("silero-vad is not installed. Run `uv sync` or disable VAD.") from exc
+        raise VADError(
+            "silero-vad is not installed. Reinstall subtitle-gen or disable VAD."
+        ) from exc
 
     model = load_silero_vad()
     wav = read_wav_tensor(wav_path, sampling_rate=16_000)
@@ -49,7 +51,9 @@ def read_wav_tensor(wav_path: str | Path, sampling_rate: int = 16_000):
     try:
         import torch
     except ImportError as exc:
-        raise VADError("torch is required for VAD. Run `uv sync`.") from exc
+        raise VADError(
+            "torch is required for VAD. Reinstall subtitle-gen to restore its dependencies."
+        ) from exc
 
     mono = read_mono_wav_array(wav_path, sample_rate=sampling_rate)
     return torch.from_numpy(mono.copy())

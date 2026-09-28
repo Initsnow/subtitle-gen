@@ -1,13 +1,33 @@
 [project]
 name = "subtitle-gen"
-version = "0.1.0"
+dynamic = ["version"]
 description = "Generate subtitles from audio/video with Qwen3 ASR, forced alignment, optional LLM segmentation, and translation."
 readme = "README.md"
 license = "GPL-3.0-only"
 license-files = ["LICENSE"]
-requires-python = ">=3.11,<3.14"
+requires-python = ">=3.11"
+keywords = [
+  "subtitles",
+  "srt",
+  "vtt",
+  "lrc",
+  "lyrics",
+  "asr",
+  "speech-recognition",
+  "forced-alignment",
+  "translation",
+]
 classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Environment :: Console",
+  "Intended Audience :: End Users/Desktop",
   "License :: OSI Approved :: GNU General Public License v3 (GPLv3)",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Topic :: Multimedia :: Sound/Audio :: Speech",
+  "Topic :: Text Processing :: Linguistic",
 ]
 dependencies = [
   "accelerate>=0.33",
@@ -17,11 +37,15 @@ dependencies = [
   "silero-vad>=6.0",
   "soundfile>=0.12",
   "soynlp>=0.0.493",
-  "torch>=2.11,<2.12",
-  "torchaudio>=2.11,<2.12",
-  "transformers @ git+https://github.com/huggingface/transformers.git",
+  "torch>=2.5",
+  "transformers>=5.13,<6",
+  # torch.compile on Windows ships no triton with the PyPI wheel.
   "triton-windows>=3.3.0; sys_platform == 'win32'",
 ]
+
+[project.urls]
+Homepage = "https://cnb.cool/azumaseren/subtitle-gen"
+Issues = "https://cnb.cool/azumaseren/subtitle-gen/-/issues"
 
 [build-system]
 requires = ["hatchling"]
@@ -30,11 +54,15 @@ build-backend = "hatchling.build"
 [project.scripts]
 subtitle-gen = "subtitle_gen.cli:main"
 
+[tool.hatch.version]
+path = "src/subtitle_gen/__init__.py"
+
+# uv resolves torch from the CUDA 12.8 index on Linux/Windows so `uv sync`
+# matches the CUDA setup the models expect. This section only affects uv; the
+# published wheel depends on plain `torch` so pip users get the PyPI default
+# (CUDA on Linux, CPU elsewhere) and can swap in their own build.
 [tool.uv.sources]
 torch = [
-  { index = "pytorch-cu128", marker = "sys_platform == 'win32' or sys_platform == 'linux'" },
-]
-torchaudio = [
   { index = "pytorch-cu128", marker = "sys_platform == 'win32' or sys_platform == 'linux'" },
 ]
 
@@ -52,12 +80,17 @@ dev = [
 [tool.ruff]
 line-length = 100
 target-version = "py311"
+# `.codex/` holds agent tooling rather than project code, and newer ruff
+# releases also format Python blocks inside Markdown.
+extend-exclude = [".codex", "*.md"]
+
+[tool.ruff.lint]
+# Ruff's default rule set varies between releases; select it explicitly so lint
+# results stay stable when ruff is upgraded.
+select = ["E4", "E7", "E9", "F"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/subtitle_gen"]
-
-[tool.hatch.metadata]
-allow-direct-references = true
