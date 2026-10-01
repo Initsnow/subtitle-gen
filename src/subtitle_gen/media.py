@@ -107,7 +107,8 @@ def read_mono_wav_array(wav_path: str | Path, sample_rate: int = 16_000):
         import soundfile as sf
     except ImportError as exc:
         raise MediaError(
-            "soundfile is required to read extracted WAV audio. Run `uv sync`."
+            "soundfile is required to read extracted WAV audio. "
+            "Reinstall subtitle-gen to restore its dependencies."
         ) from exc
 
     data, actual_sample_rate = sf.read(str(wav_path), dtype="float32", always_2d=True)

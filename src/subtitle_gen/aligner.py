@@ -79,7 +79,8 @@ class QwenForcedAligner:
             from transformers import AutoModelForTokenClassification, AutoProcessor
         except ImportError as exc:
             raise AlignmentError(
-                "Qwen aligner dependencies are not installed. Run `uv sync --extra models`."
+                "Qwen aligner requires transformers with PyTorch support. "
+                "Reinstall subtitle-gen to restore its dependencies."
             ) from exc
 
         dtype = _resolve_dtype(self.dtype)

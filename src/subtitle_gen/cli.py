@@ -4,6 +4,7 @@ import argparse
 import sys
 from pathlib import Path
 
+from . import __version__
 from .config import ConfigError, LLMConfig, apply_overrides, load_config
 from .formats import FormatError, parse_srt, write_lrc, write_subtitles
 from .llm import OpenAICompatibleLLM
@@ -20,6 +21,9 @@ def main(argv: list[str] | None = None) -> int:
     if argv is None:
         argv = sys.argv[1:]
 
+    if argv and argv[0] in {"-V", "--version"}:
+        print(f"subtitle-gen {__version__}")
+        return 0
     if argv and argv[0] == "proofread":
         return _cmd_proofread(argv[1:])
     if argv and argv[0] == "translate":

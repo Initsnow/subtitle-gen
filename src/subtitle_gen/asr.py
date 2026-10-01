@@ -81,7 +81,8 @@ class QwenASR:
             from transformers import AutoModelForMultimodalLM, AutoProcessor
         except ImportError as exc:
             raise ASRError(
-                "Qwen ASR dependencies are not installed. Run `uv sync --extra models`."
+                "Qwen ASR requires transformers with PyTorch support. "
+                "Reinstall subtitle-gen to restore its dependencies."
             ) from exc
 
         dtype = _resolve_dtype(self.dtype)
