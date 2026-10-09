@@ -258,6 +258,13 @@ def _fake_media(monkeypatch, tmp_path):
 
     monkeypatch.setattr(text_align, "extract_wav", fake_extract_wav)
     monkeypatch.setattr(text_align, "probe_duration", fake_probe_duration)
+    # _transcribe_and_align reads the mono waveform up front to share it
+    # between VAD planning and process_windows; stub that read out too.
+    monkeypatch.setattr(
+        text_align,
+        "read_mono_wav_array",
+        lambda path, **kwargs: np.zeros(160_000, dtype="float32"),
+    )
     return Path("song.flac")
 
 

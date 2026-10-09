@@ -47,8 +47,7 @@ minimal one looks like this:
 
 ```toml
 [model]
-asr_model = "Qwen/Qwen3-ASR-1.7B-hf"
-low_vram_asr_model = "Qwen/Qwen3-ASR-0.6B-hf"
+asr_model = "Qwen/Qwen3-ASR-0.6B-hf"
 aligner_model = "Qwen/Qwen3-ForcedAligner-0.6B-hf"
 device_map = "auto"
 language = "Chinese"          # optional hint; omit to auto-detect
@@ -129,7 +128,7 @@ Silero VAD misses sung vocals — this aligns the whole audio with slightly
 overlapping fixed-size windows so boundary words are not cut off.
 
 It accepts the same model/cache flags as the pipeline (`--asr-model`,
-`--low-vram`, `--language`, `--device-map`, `--cache`/`--no-cache`,
+`--language`, `--device-map`, `--cache`/`--no-cache`,
 `--cache-dir`, `--overwrite-cache`, `--[no-]compile-aligner`,
 `--[no-]compile-asr`), plus `--no-refine` to skip the per-line forced-alignment
 refinement pass. With persistent cache enabled, both the rough pass and the

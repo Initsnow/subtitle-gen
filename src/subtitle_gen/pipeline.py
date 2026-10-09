@@ -12,7 +12,7 @@ from .hybrid_segmenter import HybridSegmenter
 from .llm import OpenAICompatibleLLM
 from .llm_segmenter import LLMSegmenter, SegmentChunkInput
 from .local_segmenter import LocalSegmenter
-from .media import extract_wav, probe_duration
+from .media import extract_wav, probe_duration, read_mono_wav_array
 from .processing import format_duration as _format_duration, process_windows, report as _report
 from .segmenter import project_context_punctuation
 from .proofreader import SubtitleProofreader
@@ -96,7 +96,11 @@ class SubtitlePipeline:
         _report(progress, "probing audio duration")
         duration = probe_duration(wav_path)
         _report(progress, "planning speech windows")
-        windows = plan_audio_windows(wav_path, duration, self.config.vad)
+        # Read the full WAV once up front: the same array feeds both VAD
+        # planning and per-window slicing inside process_windows, instead of
+        # the file being re-read (and re-copied) by each stage.
+        samples = read_mono_wav_array(wav_path)
+        windows = plan_audio_windows(wav_path, duration, self.config.vad, samples=samples)
         _report(
             progress,
             f"audio: {_format_duration(duration)}; chunks: {len(windows)}; media id: {media_id}",
@@ -117,6 +121,7 @@ class SubtitlePipeline:
             windows,
             language=self.config.model.language,
             progress=progress,
+            samples=samples,
             overwrite_cache=options.overwrite_cache,
             with_alignment=segment_mode != "none",
         )

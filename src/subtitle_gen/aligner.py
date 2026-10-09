@@ -18,7 +18,7 @@ class QwenForcedAligner:
         model_id: str = DEFAULT_ALIGNER_MODEL,
         device_map: str = "auto",
         dtype: str = "auto",
-        compile_model: bool = True,
+        compile_model: bool = False,
     ) -> None:
         self.model_id = model_id
         self.device_map = device_map

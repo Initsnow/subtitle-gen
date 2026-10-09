@@ -52,7 +52,7 @@ def get_aligner(
     model_id: str,
     device_map: str = "auto",
     dtype: str = "auto",
-    compile_model: bool = True,
+    compile_model: bool = False,
 ) -> QwenForcedAligner:
     """Return a shared :class:`QwenForcedAligner` for the given configuration."""
     key = (model_id, device_map, dtype, compile_model)

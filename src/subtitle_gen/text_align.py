@@ -280,8 +280,11 @@ def _transcribe_and_align(
 ) -> tuple[list[TimedToken], str | None, QwenForcedAligner | None]:
     use_cache = config.cache.enabled
     media_id = media_cache_id(wav_path)
+    # Read the full WAV once up front and share it between VAD planning and
+    # process_windows instead of re-reading (and re-copying) it in each stage.
+    samples = read_mono_wav_array(wav_path)
     if use_vad:
-        windows = plan_audio_windows(wav_path, duration, config.vad)
+        windows = plan_audio_windows(wav_path, duration, config.vad, samples=samples)
     else:
         windows = _plan_fixed_windows(duration, ALIGN_WINDOW_SECONDS)
     _report(
@@ -307,6 +310,7 @@ def _transcribe_and_align(
         progress=progress,
         overwrite_cache=overwrite_cache,
         with_alignment=True,
+        samples=samples,
     )
     tokens = _merge_window_tokens(processed.windows)
     return tokens, processed.detected_language, processed.aligner

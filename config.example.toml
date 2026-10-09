@@ -2,8 +2,7 @@
 cache_dir = ".subtitle-gen-cache"
 
 [model]
-asr_model = "Qwen/Qwen3-ASR-1.7B-hf"
-low_vram_asr_model = "Qwen/Qwen3-ASR-0.6B-hf"
+asr_model = "Qwen/Qwen3-ASR-0.6B-hf"
 aligner_model = "Qwen/Qwen3-ForcedAligner-0.6B-hf"
 device_map = "auto"
 dtype = "auto"
@@ -43,7 +42,7 @@ cleanup_enabled = true
 max_media_entries = 12
 
 [performance]
-compile_aligner = true
+compile_aligner = false
 compile_asr = false
 
 [llm]

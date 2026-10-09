@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from .cache import (
     asr_cache_path,
@@ -53,6 +53,7 @@ def process_windows(
     progress: ProgressCallback | None = None,
     overwrite_cache: bool = False,
     with_alignment: bool = True,
+    samples: Any | None = None,
 ) -> ProcessedAudio:
     """Run ASR (and optionally forced alignment) over every audio window.
 
@@ -60,13 +61,16 @@ def process_windows(
     identical model reuse, cache keys, and progress reporting. The full WAV is
     read once and windows are sliced in memory, and the ASR/aligner weights are
     served from the process-wide model registry, so repeated calls for
-    different files in one process load each model at most once.
+    different files in one process load each model at most once. Pass
+    ``samples`` (mono float32 waveform at 16 kHz) when the caller already read
+    the file, e.g. for VAD planning, to skip the redundant disk read.
     """
     use_cache = config.cache.enabled
     regenerate = overwrite_cache or not use_cache
     media_id = media_cache_id(Path(wav_path))
 
-    samples = read_mono_wav_array(Path(wav_path))
+    if samples is None:
+        samples = read_mono_wav_array(Path(wav_path))
     asr = None
     aligner = None
     results: list[ProcessedWindow] = []

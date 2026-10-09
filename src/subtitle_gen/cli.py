@@ -51,7 +51,6 @@ def _cmd_pipeline(argv: list[str]) -> int:
         config = apply_overrides(
             config,
             asr_model=args.asr_model,
-            low_vram=args.low_vram,
             language=args.language,
             device_map=args.device_map,
             segment_mode=args.segment_mode,
@@ -152,9 +151,6 @@ def _build_pipeline_parser() -> argparse.ArgumentParser:
         help="Also write a bilingual subtitle file alongside the translation.",
     )
     parser.add_argument("--asr-model", help="Override ASR model id.")
-    parser.add_argument(
-        "--low-vram", action="store_true", help="Use the configured low-VRAM ASR model."
-    )
     parser.add_argument("--language", help="Source language hint for ASR and forced alignment.")
     parser.add_argument("--device-map", default=None, help="Transformers device_map override.")
     parser.add_argument("--llm-model", help="LLM model name for segmentation/translation.")
@@ -353,9 +349,6 @@ def _cmd_align(argv: list[str]) -> int:
     parser.add_argument("--config", help="TOML config path. Defaults to ./config.toml if present.")
     parser.add_argument("--language", help="Source language hint for ASR and forced alignment.")
     parser.add_argument("--asr-model", help="Override ASR model id.")
-    parser.add_argument(
-        "--low-vram", action="store_true", help="Use the configured low-VRAM ASR model."
-    )
     parser.add_argument("--device-map", default=None, help="Transformers device_map override.")
     cache = parser.add_mutually_exclusive_group()
     cache.add_argument(
@@ -425,7 +418,6 @@ def _cmd_align(argv: list[str]) -> int:
         config = apply_overrides(
             config,
             asr_model=args.asr_model,
-            low_vram=args.low_vram,
             language=args.language,
             device_map=args.device_map,
             compile_aligner=args.compile_aligner,

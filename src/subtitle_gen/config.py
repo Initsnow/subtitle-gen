@@ -7,8 +7,7 @@ from pathlib import Path
 from typing import Any, TypeVar
 
 
-DEFAULT_ASR_MODEL = "Qwen/Qwen3-ASR-1.7B-hf"
-LOW_VRAM_ASR_MODEL = "Qwen/Qwen3-ASR-0.6B-hf"
+DEFAULT_ASR_MODEL = "Qwen/Qwen3-ASR-0.6B-hf"
 DEFAULT_ALIGNER_MODEL = "Qwen/Qwen3-ForcedAligner-0.6B-hf"
 DEFAULT_CONFIG_FILE = "config.toml"
 
@@ -16,7 +15,6 @@ DEFAULT_CONFIG_FILE = "config.toml"
 @dataclass(frozen=True)
 class ModelConfig:
     asr_model: str = DEFAULT_ASR_MODEL
-    low_vram_asr_model: str = LOW_VRAM_ASR_MODEL
     aligner_model: str = DEFAULT_ALIGNER_MODEL
     device_map: str = "auto"
     dtype: str = "auto"
@@ -60,7 +58,11 @@ class CacheConfig:
 
 @dataclass(frozen=True)
 class PerformanceConfig:
-    compile_aligner: bool = True
+    # torch.compile saves ~35% per aligned chunk at steady state but costs
+    # ~2 minutes of one-shot compilation across varying chunk shapes, and on a
+    # 6 GB GPU eager mode peaks ~0.9 GB higher. Default off: single-file runs
+    # finish faster without it; enable for large batches.
+    compile_aligner: bool = False
     compile_asr: bool = False
 
 
@@ -127,8 +129,6 @@ def apply_overrides(config: AppConfig, **overrides: Any) -> AppConfig:
 
     if overrides.get("asr_model"):
         model = replace(model, asr_model=overrides["asr_model"])
-    if overrides.get("low_vram"):
-        model = replace(model, asr_model=model.low_vram_asr_model)
     if overrides.get("language"):
         model = replace(model, language=overrides["language"])
     if overrides.get("device_map"):
