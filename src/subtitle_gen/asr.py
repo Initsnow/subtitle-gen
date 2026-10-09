@@ -37,9 +37,20 @@ class QwenASR:
         self._compiled_forward: Any | None = None
         self._eager_forward: Any | None = None
 
-    def transcribe(self, audio_path: str | Path, language: str | None = None) -> ASRResult:
+    def transcribe(
+        self,
+        audio: "str | Path | Any",
+        language: str | None = None,
+    ) -> ASRResult:
+        """Transcribe an audio chunk.
+
+        ``audio`` is either a path to a 16 kHz mono WAV file or an already
+        loaded mono waveform array, which lets batch callers slice windows in
+        memory instead of cutting chunk files on disk.
+        """
         processor, model = self._load()
-        request: dict[str, Any] = {"audio": read_mono_wav_array(audio_path)}
+        waveform = _coerce_audio(audio)
+        request: dict[str, Any] = {"audio": waveform}
         if language:
             request["language"] = language
 
@@ -117,6 +128,13 @@ def _resolve_dtype(dtype: str) -> Any:
     if dtype not in mapping:
         raise ASRError(f"Unsupported dtype: {dtype}")
     return mapping[dtype]
+
+
+def _coerce_audio(audio: "str | Path | Any") -> Any:
+    """Pass waveform arrays through unchanged; read WAV paths into arrays."""
+    if isinstance(audio, (str, Path)):
+        return read_mono_wav_array(audio)
+    return audio
 
 
 def _from_pretrained_with_dtype(model_cls: Any, model_id: str, dtype: Any, device_map: str) -> Any:

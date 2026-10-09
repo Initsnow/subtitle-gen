@@ -1,11 +1,12 @@
-from pathlib import Path
-
+import numpy as np
 import pytest
 
 import subtitle_gen.processing as processing
 from subtitle_gen.asr import ASRResult
 from subtitle_gen.config import AppConfig
 from subtitle_gen.types import AudioWindow, TimedToken
+
+SAMPLES = np.linspace(-1.0, 1.0, 16000, dtype=np.float32)
 
 
 @pytest.fixture(autouse=True)
@@ -23,7 +24,7 @@ class FakeASR:
     def __init__(self, *args, **kwargs):
         FakeASR.instances += 1
 
-    def transcribe(self, path, language=None):
+    def transcribe(self, audio, language=None):
         FakeASR.calls += 1
         return ASRResult(text="hello", language="English")
 
@@ -35,8 +36,9 @@ class FakeAligner:
     def __init__(self, *args, **kwargs):
         FakeAligner.instances += 1
 
-    def align(self, path, transcript, language=None):
+    def align(self, audio, transcript, language=None):
         FakeAligner.calls += 1
+        assert len(audio) > 0
         return [TimedToken(transcript, 0.1, 0.9)]
 
 
@@ -55,11 +57,10 @@ def _config(tmp_path):
     )
 
 
-def _fake_cut_wav_window(wav_path, window, output_dir, **kwargs):
-    path = Path(output_dir) / f"chunk-{window.index:05d}-{window.start:.3f}-{window.end:.3f}.wav"
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_bytes(b"fake")
-    return path
+def _patch_models(monkeypatch):
+    monkeypatch.setattr(processing, "get_asr", lambda **kwargs: FakeASR())
+    monkeypatch.setattr(processing, "get_aligner", lambda **kwargs: FakeAligner())
+    monkeypatch.setattr(processing, "read_mono_wav_array", lambda path: SAMPLES)
 
 
 def test_process_windows_runs_and_reuses_cache(monkeypatch, tmp_path):
@@ -67,9 +68,7 @@ def test_process_windows_runs_and_reuses_cache(monkeypatch, tmp_path):
     wav_path.parent.mkdir(parents=True, exist_ok=True)
     wav_path.write_bytes(b"fake")
     windows = [AudioWindow(index=1, start=0.0, end=2.0)]
-    monkeypatch.setattr(processing, "QwenASR", FakeASR)
-    monkeypatch.setattr(processing, "QwenForcedAligner", FakeAligner)
-    monkeypatch.setattr(processing, "cut_wav_window", _fake_cut_wav_window)
+    _patch_models(monkeypatch)
 
     config = _config(tmp_path)
     first = processing.process_windows(
@@ -89,14 +88,41 @@ def test_process_windows_runs_and_reuses_cache(monkeypatch, tmp_path):
     assert FakeAligner.calls == 1
 
 
+def test_process_windows_slices_windows_in_memory(monkeypatch, tmp_path):
+    wav_path = tmp_path / "audio" / "media.16k-mono.wav"
+    wav_path.parent.mkdir(parents=True, exist_ok=True)
+    wav_path.write_bytes(b"fake")
+    windows = [AudioWindow(index=1, start=0.5, end=1.5)]
+    seen = {}
+
+    def fake_transcribe(audio, language=None):
+        seen["audio"] = audio
+        return ASRResult(text="hello", language="English")
+
+    class SlicingFakeASR(FakeASR):
+        def transcribe(self, audio, language=None):
+            return fake_transcribe(audio, language)
+
+    monkeypatch.setattr(processing, "get_asr", lambda **kwargs: SlicingFakeASR())
+    monkeypatch.setattr(processing, "get_aligner", lambda **kwargs: FakeAligner())
+    monkeypatch.setattr(processing, "read_mono_wav_array", lambda path: SAMPLES)
+
+    processing.process_windows(
+        wav_path, _config(tmp_path).cache_dir, _config(tmp_path), windows, language="English"
+    )
+
+    # 0.5s..1.5s at 16 kHz -> samples 8000..24000 of the full waveform.
+    expected = SAMPLES[8000:24000]
+    assert len(seen["audio"]) == len(expected)
+    assert list(seen["audio"]) == list(expected)
+
+
 def test_process_windows_skips_alignment_when_not_requested(monkeypatch, tmp_path):
     wav_path = tmp_path / "audio" / "media.16k-mono.wav"
     wav_path.parent.mkdir(parents=True, exist_ok=True)
     wav_path.write_bytes(b"fake")
     windows = [AudioWindow(index=1, start=0.0, end=2.0)]
-    monkeypatch.setattr(processing, "QwenASR", FakeASR)
-    monkeypatch.setattr(processing, "QwenForcedAligner", FakeAligner)
-    monkeypatch.setattr(processing, "cut_wav_window", _fake_cut_wav_window)
+    _patch_models(monkeypatch)
 
     result = processing.process_windows(
         wav_path,

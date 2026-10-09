@@ -80,6 +80,22 @@ subtitle-gen input.mp4 --segment-mode hybrid --out-dir outputs
 subtitle-gen input.mp4 --translate zh --out-dir outputs
 ```
 
+### Batch (multiple files, one model load)
+
+Pass several inputs to process them in one invocation — the ASR, forced
+aligner, and VAD weights load once and are shared across every file, which is
+much faster than looping `subtitle-gen` in a shell (each shell invocation
+reloads the weights):
+
+```console
+subtitle-gen ep01.mp4 ep02.mp4 ep03.mp4 --out-dir outputs
+subtitle-gen *.mkv --out-dir outputs --translate zh
+```
+
+Each file gets its own output set named after its stem. `--out` only works
+with a single input. A file that fails is reported to stderr and does not
+abort the batch; the exit code is non-zero if any input failed.
+
 Pipeline options:
 
 - `--segment-mode none|blingfire|local|hybrid|llm`
@@ -155,6 +171,21 @@ Other entry points exported from `subtitle_gen`:
 - `SubtitleTranslator(llm, llm_config).translate(items, target_language)`
 - `parse_srt` / `parse_lrc` / `write_subtitles` / `write_lrc` — standalone file I/O
 - `OpenAICompatibleLLM` — the OpenAI-compatible client used by the above
+
+Model weights are cached process-wide and keyed by model id, device map,
+dtype, and compile flags, so looping over inputs reuses one load. Call
+`subtitle_gen.models.clear_model_cache()` to release them.
+
+```python
+from pathlib import Path
+
+from subtitle_gen import PipelineOptions, SubtitlePipeline, load_config
+
+config = load_config()
+pipeline = SubtitlePipeline(config)
+for media in Path("inputs").iterdir():
+    result = pipeline.run(PipelineOptions(input_path=media, translate="zh"))
+```
 
 ## Development
 

@@ -51,6 +51,7 @@ class RichProgressReporter:
 
         self._chunk_task: TaskID | None = None
         self._chunk_total = 0
+        self._chunk_media_id: str | None = None
         self._active_chunk: int | None = None
         self._completed_chunks: set[int] = set()
 
@@ -125,6 +126,13 @@ class RichProgressReporter:
         if not match:
             return False
         total = int(match.group("chunks"))
+        media_id = match.group("media_id")
+        if media_id != self._chunk_media_id:
+            # A new media file started (batch runs emit one summary per file);
+            # restart the chunk tracker so the bar advances for this file too.
+            self._chunk_media_id = media_id
+            self._completed_chunks.clear()
+            self._active_chunk = None
         self._chunk_total = total
         if total > 0 and self._chunk_task is None:
             self._chunk_task = self.progress.add_task(
@@ -135,7 +143,7 @@ class RichProgressReporter:
         self._print_info(
             "audio: "
             f"{match.group('duration')}; chunks: {total}; "
-            f"media id: {match.group('media_id')}"
+            f"media id: {media_id}"
         )
         return True
 

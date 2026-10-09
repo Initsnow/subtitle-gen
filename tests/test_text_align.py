@@ -1,5 +1,6 @@
 from pathlib import Path
 
+import numpy as np
 import pytest
 
 import subtitle_gen.text_align as text_align
@@ -332,14 +333,6 @@ def test_align_lines_to_audio_caches_refine_alignments(monkeypatch, tmp_path):
             FakeAligner.calls += 1
             return [TimedToken(transcript, 0.2, 0.8)]
 
-    def fake_cut_wav_window(wav_path, window, output_dir, **kwargs):
-        path = (
-            Path(output_dir) / f"chunk-{window.index:05d}-{window.start:.3f}-{window.end:.3f}.wav"
-        )
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_bytes(b"fake")
-        return path
-
     def fake_process_windows(*args, **kwargs):
         return ProcessedAudio(
             windows=[
@@ -354,8 +347,10 @@ def test_align_lines_to_audio_caches_refine_alignments(monkeypatch, tmp_path):
             aligner=None,
         )
 
-    monkeypatch.setattr(text_align, "QwenForcedAligner", FakeAligner)
-    monkeypatch.setattr(text_align, "cut_wav_window", fake_cut_wav_window)
+    monkeypatch.setattr(text_align, "get_aligner", lambda **kwargs: FakeAligner())
+    monkeypatch.setattr(
+        text_align, "read_mono_wav_array", lambda path: np.zeros(160_000, dtype=np.float32)
+    )
     monkeypatch.setattr(text_align, "process_windows", fake_process_windows)
 
     config = _config_with_cache(tmp_path / "cache")

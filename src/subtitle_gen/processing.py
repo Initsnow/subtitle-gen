@@ -3,9 +3,8 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
+from typing import TYPE_CHECKING
 
-from .aligner import QwenForcedAligner
-from .asr import QwenASR
 from .cache import (
     asr_cache_path,
     load_cached_alignment_tokens,
@@ -15,8 +14,12 @@ from .cache import (
     save_asr_result,
 )
 from .config import AppConfig
-from .media import cut_wav_window
+from .media import read_mono_wav_array, slice_wav_window
+from .models import get_aligner, get_asr
 from .types import AudioWindow, TimedToken
+
+if TYPE_CHECKING:
+    from .aligner import QwenForcedAligner
 
 ProgressCallback = Callable[[str], None]
 
@@ -37,7 +40,7 @@ class ProcessedAudio:
 
     windows: list[ProcessedWindow]
     detected_language: str | None
-    aligner: QwenForcedAligner | None
+    aligner: "QwenForcedAligner | None"
 
 
 def process_windows(
@@ -54,15 +57,18 @@ def process_windows(
     """Run ASR (and optionally forced alignment) over every audio window.
 
     Shared by the subtitle pipeline and the ``align`` command so both paths use
-    identical lazy model loading, cache keys, and progress reporting.
+    identical model reuse, cache keys, and progress reporting. The full WAV is
+    read once and windows are sliced in memory, and the ASR/aligner weights are
+    served from the process-wide model registry, so repeated calls for
+    different files in one process load each model at most once.
     """
     use_cache = config.cache.enabled
     regenerate = overwrite_cache or not use_cache
     media_id = media_cache_id(Path(wav_path))
-    chunk_cache = Path(cache_root) / "chunks" / media_id
 
-    asr: QwenASR | None = None
-    aligner: QwenForcedAligner | None = None
+    samples = read_mono_wav_array(Path(wav_path))
+    asr = None
+    aligner = None
     results: list[ProcessedWindow] = []
     detected_language: str | None = None
     total_windows = len(windows)
@@ -75,12 +81,7 @@ def process_windows(
                 f"{format_duration(window.start)}-{format_duration(window.end)}"
             ),
         )
-        chunk_path = cut_wav_window(
-            Path(wav_path),
-            window,
-            chunk_cache,
-            overwrite=regenerate,
-        )
+        audio = slice_wav_window(samples, window)
         cache_path = asr_cache_path(Path(cache_root), media_id, window)
 
         asr_result = None
@@ -93,14 +94,14 @@ def process_windows(
         if asr_result is None:
             if asr is None:
                 report(progress, f"loading ASR model: {config.model.asr_model}")
-                asr = QwenASR(
+                asr = get_asr(
                     model_id=config.model.asr_model,
                     device_map=config.model.device_map,
                     dtype=config.model.dtype,
                     compile_model=config.performance.compile_asr,
                 )
             report(progress, f"chunk {window_position}/{total_windows}: transcribing")
-            asr_result = asr.transcribe(chunk_path, language=language)
+            asr_result = asr.transcribe(audio, language=language)
             if use_cache:
                 save_asr_result(
                     cache_path,
@@ -132,7 +133,7 @@ def process_windows(
                         progress,
                         f"loading aligner model: {config.model.aligner_model}",
                     )
-                    aligner = QwenForcedAligner(
+                    aligner = get_aligner(
                         model_id=config.model.aligner_model,
                         device_map=config.model.device_map,
                         dtype=config.model.dtype,
@@ -140,7 +141,7 @@ def process_windows(
                     )
                 report(progress, f"chunk {window_position}/{total_windows}: aligning")
                 local_tokens = aligner.align(
-                    chunk_path,
+                    audio,
                     asr_result.text,
                     language=alignment_language,
                 )

@@ -42,6 +42,10 @@ def _cmd_pipeline(argv: list[str]) -> int:
     parser = _build_pipeline_parser()
     args = parser.parse_args(argv)
 
+    inputs = [Path(item) for item in args.input]
+    if args.out and len(inputs) > 1:
+        parser.error("--out requires exactly one input file; use --out-dir for batches")
+
     try:
         config = load_config(args.config)
         config = apply_overrides(
@@ -58,25 +62,52 @@ def _cmd_pipeline(argv: list[str]) -> int:
             cache_enabled=args.cache_enabled,
             cache_dir=args.cache_dir,
         )
-        with RichProgressReporter() as progress:
-            result = SubtitlePipeline(config).run(
-                PipelineOptions(
-                    input_path=Path(args.input),
-                    translate=args.translate,
-                    segment_mode=args.segment_mode,
-                    overwrite_cache=args.overwrite_cache,
-                    progress=progress,
-                )
-            )
-            progress("writing subtitle output")
-            written = _write_outputs(args, result.subtitles, config.output.strip_punctuation)
-            progress(f"wrote {len(written)} file(s)")
     except (ConfigError, Exception) as exc:
         print(f"subtitle-gen: {exc}", file=sys.stderr)
         return 1
 
+    # One pipeline for every input: ASR and aligner weights are served from
+    # the process-wide model registry, so a batch loads them exactly once.
+    pipeline = SubtitlePipeline(config)
+    written: list[Path] = []
+    failures: list[Path] = []
+    total_inputs = len(inputs)
+
+    with RichProgressReporter() as progress:
+        for position, input_path in enumerate(inputs, start=1):
+            if total_inputs > 1:
+                progress(f"file {position}/{total_inputs}: {input_path}")
+            try:
+                result = pipeline.run(
+                    PipelineOptions(
+                        input_path=input_path,
+                        translate=args.translate,
+                        segment_mode=args.segment_mode,
+                        overwrite_cache=args.overwrite_cache,
+                        progress=progress,
+                    )
+                )
+                progress("writing subtitle output")
+                file_written = _write_outputs(
+                    args, input_path, result.subtitles, config.output.strip_punctuation
+                )
+                progress(f"wrote {len(file_written)} file(s)")
+                written.extend(file_written)
+            except Exception as exc:
+                # A single bad media file must not abort the whole batch.
+                print(f"subtitle-gen: {input_path}: {exc}", file=sys.stderr)
+                failures.append(input_path)
+                continue
+
     for path in written:
         print(path)
+    if failures:
+        print(
+            f"subtitle-gen: {len(failures)}/{total_inputs} input(s) failed: "
+            + ", ".join(str(path) for path in failures),
+            file=sys.stderr,
+        )
+        return 1
     return 0
 
 
@@ -92,7 +123,11 @@ def _build_pipeline_parser() -> argparse.ArgumentParser:
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
-    parser.add_argument("input", help="Input audio/video path.")
+    parser.add_argument(
+        "input",
+        nargs="+",
+        help="Input audio/video path(s). Multiple inputs share one model load.",
+    )
     parser.add_argument("--config", help="TOML config path. Defaults to ./config.toml if present.")
     parser.add_argument("--out", help="Single output file path. Format is inferred from extension.")
     parser.add_argument("--out-dir", help="Directory for output subtitle set.")
@@ -506,9 +541,11 @@ def _llm_config_with_overrides(
 
 
 def _write_outputs(
-    args: argparse.Namespace, subtitles: list, strip_punctuation: bool = False
+    args: argparse.Namespace,
+    input_path: Path,
+    subtitles: list,
+    strip_punctuation: bool = False,
 ) -> list[Path]:
-    input_path = Path(args.input)
     formats = tuple(args.formats or ["srt"])
 
     if args.out:

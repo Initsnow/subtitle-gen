@@ -119,6 +119,23 @@ def read_mono_wav_array(wav_path: str | Path, sample_rate: int = 16_000):
     return data.mean(axis=1)
 
 
+def slice_wav_window(
+    samples,
+    window: AudioWindow,
+    sample_rate: int = 16_000,
+):
+    """Cut one :class:`AudioWindow` out of an in-memory mono waveform.
+
+    Slicing in memory replaces the per-chunk ``ffmpeg`` subprocess (and its
+    disk round-trip) used previously; because the cached full WAV is already
+    16-bit PCM, the resulting samples match the on-disk chunk path.
+    """
+    total = samples.shape[0]
+    start = max(0, min(int(round(window.start * sample_rate)), total))
+    end = max(start, min(int(round(window.end * sample_rate)), total))
+    return samples[start:end]
+
+
 def _run(command: list[str]) -> subprocess.CompletedProcess[str]:
     try:
         return subprocess.run(command, check=True, capture_output=True, text=True)

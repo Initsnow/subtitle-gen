@@ -16,7 +16,8 @@ from .cache import (
 )
 from .config import AppConfig
 from .formats import parse_lrc
-from .media import cut_wav_window, extract_wav, probe_duration
+from .media import extract_wav, probe_duration, read_mono_wav_array, slice_wav_window
+from .models import get_aligner
 from .processing import (
     ProcessedWindow,
     format_duration as _format_duration,
@@ -356,8 +357,9 @@ def _refine_lines(
     """Force-align each line's exact text to its own short audio window for
     precise boundaries, falling back to the rough span when alignment fails.
 
-    Refine chunks and alignments live under ``<cache>/refine/<media-id>/`` and
-    are reused on subsequent runs when the persistent cache is enabled.
+    Refine alignments are cached under ``<cache>/refine/<media-id>/`` keyed by
+    the refine window and are reused on subsequent runs when the persistent
+    cache is enabled.
     """
     use_cache = config.cache.enabled
     media_id = media_cache_id(wav_path)
@@ -366,6 +368,7 @@ def _refine_lines(
     alignment_language = language or "English"
     total = len(lines)
     refine_windows = [_refine_window(index, rough, duration) for index in range(1, total + 1)]
+    samples = read_mono_wav_array(wav_path)
 
     if use_cache and config.cache.cleanup_enabled:
         _report(progress, "cleaning stale refine cache entries")
@@ -382,12 +385,6 @@ def _refine_lines(
     ):
         start, end = rough_start, rough_end
         if line.strip():
-            chunk_path = cut_wav_window(
-                wav_path,
-                window,
-                refine_dir,
-                overwrite=overwrite_cache or not use_cache,
-            )
             refine_cache_path = refine_dir / f"{chunk_cache_stem(window)}.json"
 
             local_tokens = None
@@ -401,7 +398,7 @@ def _refine_lines(
             if local_tokens is None:
                 if aligner is None:
                     _report(progress, f"loading aligner model: {config.model.aligner_model}")
-                    aligner = QwenForcedAligner(
+                    aligner = get_aligner(
                         model_id=config.model.aligner_model,
                         device_map=config.model.device_map,
                         dtype=config.model.dtype,
@@ -410,7 +407,7 @@ def _refine_lines(
                 alignment_failed = False
                 try:
                     local_tokens = aligner.align(
-                        chunk_path,
+                        slice_wav_window(samples, window),
                         line,
                         language=alignment_language,
                     )

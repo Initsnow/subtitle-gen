@@ -13,6 +13,25 @@ class VADError(RuntimeError):
     pass
 
 
+# The Silero VAD model is small but was previously reloaded for every media
+# file; caching it keeps batch runs free of repeated load overhead.
+_vad_model: Any | None = None
+
+
+def get_silero_vad_model() -> Any:
+    """Return the shared Silero VAD model, loading it on first use."""
+    global _vad_model
+    if _vad_model is None:
+        try:
+            from silero_vad import load_silero_vad
+        except ImportError as exc:
+            raise VADError(
+                "silero-vad is not installed. Reinstall subtitle-gen or disable VAD."
+            ) from exc
+        _vad_model = load_silero_vad()
+    return _vad_model
+
+
 def plan_audio_windows(
     wav_path: str | Path, duration: float, config: VADConfig
 ) -> list[AudioWindow]:
@@ -27,13 +46,13 @@ def plan_audio_windows(
 
 def detect_speech_silero(wav_path: str | Path, config: VADConfig) -> list[tuple[float, float]]:
     try:
-        from silero_vad import get_speech_timestamps, load_silero_vad
+        from silero_vad import get_speech_timestamps
     except ImportError as exc:
         raise VADError(
             "silero-vad is not installed. Reinstall subtitle-gen or disable VAD."
         ) from exc
 
-    model = load_silero_vad()
+    model = get_silero_vad_model()
     wav = read_wav_tensor(wav_path, sampling_rate=16_000)
     timestamps = get_speech_timestamps(
         wav,

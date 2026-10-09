@@ -31,10 +31,16 @@ class QwenForcedAligner:
 
     def align(
         self,
-        audio_path: str | Path,
+        audio: "str | Path | Any",
         transcript: str,
         language: str | None = None,
     ) -> list[TimedToken]:
+        """Force-align a transcript to an audio chunk.
+
+        ``audio`` is either a path to a 16 kHz mono WAV file or an already
+        loaded mono waveform array, which lets batch callers slice windows in
+        memory instead of cutting chunk files on disk.
+        """
         transcript = transcript.strip()
         if not transcript:
             return []
@@ -42,7 +48,7 @@ class QwenForcedAligner:
         processor, model = self._load()
         language = language or "English"
         aligner_inputs, word_lists = processor.prepare_forced_aligner_inputs(
-            audio=read_mono_wav_array(audio_path),
+            audio=_coerce_audio(audio),
             transcript=transcript,
             language=language,
         )
@@ -143,6 +149,13 @@ def _resolve_dtype(dtype: str) -> Any:
     if dtype not in mapping:
         raise AlignmentError(f"Unsupported dtype: {dtype}")
     return mapping[dtype]
+
+
+def _coerce_audio(audio: "str | Path | Any") -> Any:
+    """Pass waveform arrays through unchanged; read WAV paths into arrays."""
+    if isinstance(audio, (str, Path)):
+        return read_mono_wav_array(audio)
+    return audio
 
 
 def _from_pretrained_with_dtype(model_cls: Any, model_id: str, dtype: Any, device_map: str) -> Any:

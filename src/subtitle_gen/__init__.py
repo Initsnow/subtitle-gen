@@ -1,6 +1,6 @@
 """Generate subtitles from audio or video, and work with existing subtitle files."""
 
-__version__ = "0.1.0"
+__version__ = "0.2.0"
 
 from .config import AppConfig, ConfigError, load_config
 from .formats import FormatError, parse_lrc, parse_srt, write_lrc, write_subtitles
