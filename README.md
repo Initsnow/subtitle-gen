@@ -75,6 +75,7 @@ overrides the configured model.
 ```console
 subtitle-gen input.mp4 --out output.srt
 subtitle-gen input.mp4 --out-dir outputs --format srt --format vtt
+subtitle-gen input.mp4 --out-dir outputs --format txt
 subtitle-gen input.mp4 --segment-mode local --out-dir outputs
 subtitle-gen input.mp4 --segment-mode hybrid --out-dir outputs
 subtitle-gen input.mp4 --translate zh --out-dir outputs
@@ -120,7 +121,7 @@ may be plain text (one line per cue) or an LRC file; descriptive LRC metadata
 tags (`[ti:...]`, `[ar:...]`, ...) are preserved in the output, while stale
 timing tags (`[offset:...]`, `[length:...]`) are dropped because timestamps are
 regenerated. By default it writes `<text>.timed.lrc`; use `--out` (single file,
-format inferred from its extension) or `--format lrc|srt|vtt|json` (repeatable)
+format inferred from its extension) or `--format lrc|srt|vtt|json|txt` (repeatable)
 to control output. `--out` and `--format` cannot be combined.
 
 VAD is used by default (good for speech). Pass `--no-vad` for songs/music, where

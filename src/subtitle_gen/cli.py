@@ -134,7 +134,7 @@ def _build_pipeline_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--format",
         action="append",
-        choices=["srt", "vtt", "json"],
+        choices=["srt", "vtt", "json", "txt"],
         dest="formats",
         help="Output format for --out-dir. Can be passed multiple times.",
     )
@@ -346,7 +346,7 @@ def _cmd_align(argv: list[str]) -> int:
     parser.add_argument(
         "--format",
         action="append",
-        choices=["lrc", "srt", "vtt", "json"],
+        choices=["lrc", "srt", "vtt", "json", "txt"],
         dest="formats",
         help="Output format(s) when --out is not given. Default: lrc.",
     )

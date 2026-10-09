@@ -74,6 +74,24 @@ def render_vtt(
     return "\n".join(blocks)
 
 
+def render_txt(
+    items: list[SubtitleItem],
+    mode: SubtitleMode = "original",
+    *,
+    strip_punctuation: bool = False,
+) -> str:
+    lines: list[str] = []
+    for item in items:
+        text = render_subtitle_text(item, mode, strip_punctuation=strip_punctuation)
+        if not text:
+            continue
+        # One line per cue: collapse cue-internal line breaks into spaces.
+        line = " ".join(text.split())
+        if line:
+            lines.append(line)
+    return "\n".join(lines) + ("\n" if lines else "")
+
+
 def render_json(
     items: list[SubtitleItem],
     mode: SubtitleMode = "original",
@@ -137,6 +155,8 @@ def write_subtitles(
         content = render_vtt(items, mode, strip_punctuation=strip_punctuation)
     elif extension == "json":
         content = render_json(items, mode, strip_punctuation=strip_punctuation)
+    elif extension == "txt":
+        content = render_txt(items, mode, strip_punctuation=strip_punctuation)
     else:
         raise FormatError(f"Unsupported subtitle format: {extension}")
     path.write_text(content, encoding="utf-8")
@@ -158,7 +178,7 @@ def write_output_set(
     written: list[Path] = []
     for subtitle_format in formats:
         normalized_format = subtitle_format.lower().lstrip(".")
-        if normalized_format not in {"srt", "vtt", "json"}:
+        if normalized_format not in {"srt", "vtt", "json", "txt"}:
             raise FormatError(f"Unsupported subtitle format: {subtitle_format}")
         written.append(
             write_subtitles(

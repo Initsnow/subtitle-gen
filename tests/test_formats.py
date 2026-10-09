@@ -8,7 +8,9 @@ from subtitle_gen.formats import (
     render_json,
     render_lrc,
     render_srt,
+    render_txt,
     render_vtt,
+    write_subtitles,
 )
 from subtitle_gen.types import SubtitleItem
 
@@ -33,6 +35,34 @@ def test_render_vtt_original():
 
     assert content.startswith("WEBVTT\n\n")
     assert "00:00:00.000 --> 00:00:01.200\nHello" in content
+
+
+def test_render_txt_one_line_per_cue_without_timestamps():
+    items = [
+        SubtitleItem(1, 0.0, 1.2, "Hello"),
+        SubtitleItem(2, 1.4, 2.0, "   "),
+        SubtitleItem(3, 2.0, 3.0, "World again"),
+    ]
+
+    content = render_txt(items)
+
+    assert content == "Hello\nWorld again\n"
+
+
+def test_render_txt_bilingual_collapses_cue_line_breaks():
+    items = [SubtitleItem(1, 0.0, 1.2, "Hello!", "你好。")]
+
+    content = render_txt(items, "bilingual", strip_punctuation=True)
+
+    assert content == "Hello 你好\n"
+
+
+def test_write_subtitles_txt(tmp_path):
+    items = [SubtitleItem(1, 0.0, 1.2, "Hello")]
+
+    path = write_subtitles(tmp_path / "out.original.txt", items)
+
+    assert path.read_text(encoding="utf-8") == "Hello\n"
 
 
 def test_render_json_includes_optional_translation():
