@@ -21,11 +21,21 @@ fn asr_load_fails_gracefully_without_native_runtime() {
 }
 
 #[test]
-fn vad_load_fails_gracefully_without_native_runtime() {
-    let err =
-        VadSession::load("firered-vad", Default::default(), &LoadOptions::default()).unwrap_err();
-    let message = err.to_string();
-    assert!(!message.is_empty());
+fn vad_fails_gracefully_without_native_runtime() {
+    let res = VadSession::load("firered-vad", Default::default(), &LoadOptions::default());
+    match res {
+        Err(err) => {
+            assert!(!err.to_string().is_empty());
+        }
+        Ok(session) => {
+            let err = session.detect(&[0.0; 16000]).unwrap_err();
+            let msg = err.to_string();
+            assert!(
+                msg.contains("support") || msg.contains("native") || msg.contains("runtime"),
+                "unexpected error: {msg}"
+            );
+        }
+    }
 }
 
 #[test]

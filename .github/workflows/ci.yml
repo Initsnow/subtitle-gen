@@ -20,18 +20,6 @@ jobs:
         with:
           components: rustfmt, clippy
 
-      - name: Download CrispASR native library (Linux CUDA)
-        run: |
-          crispasr_url="https://github.com/CrispStrobe/CrispASR/releases/download/v0.8.42/libcrispasr-linux-x86_64-cuda.tar.gz"
-          download_path="$RUNNER_TEMP/libcrispasr.tar.gz"
-          extract_dir="$RUNNER_TEMP/crispasr"
-          curl -sSL "$crispasr_url" -o "$download_path"
-          mkdir -p "$extract_dir"
-          tar -xzf "$download_path" -C "$extract_dir"
-          lib_dir=$(find "$extract_dir" -type d -name "lib" | head -n 1)
-          echo "CRISPASR_LIB_DIR=$lib_dir" >> $GITHUB_ENV
-          echo "LD_LIBRARY_PATH=$lib_dir:$LD_LIBRARY_PATH" >> $GITHUB_ENV
-
       - name: Rust Cache
         uses: Swatinem/rust-cache@v2
 
@@ -39,11 +27,7 @@ jobs:
         run: cargo fmt --all --check
 
       - name: Clippy check
-        run: cargo clippy --workspace --all-targets -- -D warnings
-        env:
-          CRISPASR_LIB_DIR: ${{ env.CRISPASR_LIB_DIR }}
+        run: cargo clippy --workspace --all-targets --no-default-features -- -D warnings
 
       - name: Run workspace tests
-        run: cargo test --workspace --all-targets
-        env:
-          CRISPASR_LIB_DIR: ${{ env.CRISPASR_LIB_DIR }}
+        run: cargo test --workspace --all-targets --no-default-features

@@ -55,4 +55,4 @@ concurrency = 400
 
 [output]
 default_formats = ["srt"]
-# strip_punctuation = false
+# strip_punctuation = true

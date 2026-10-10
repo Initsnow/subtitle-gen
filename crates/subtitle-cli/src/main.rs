@@ -147,7 +147,7 @@ struct AlignArgs {
     vad: bool,
 
     /// Strip punctuation from end of lines
-    #[arg(long)]
+    #[arg(long, default_value_t = true, action = clap::ArgAction::Set)]
     strip_punctuation: bool,
 }
 

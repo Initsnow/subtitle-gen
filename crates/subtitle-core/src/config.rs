@@ -128,7 +128,7 @@ pub struct OutputConfig {
     pub default_formats: Vec<String>,
     #[serde(default = "default_bilingual_separator")]
     pub bilingual_separator: String,
-    #[serde(default)]
+    #[serde(default = "default_strip_punctuation")]
     pub strip_punctuation: bool,
 }
 
@@ -138,13 +138,16 @@ fn default_formats() -> Vec<String> {
 fn default_bilingual_separator() -> String {
     "\n".into()
 }
+fn default_strip_punctuation() -> bool {
+    true
+}
 
 impl Default for OutputConfig {
     fn default() -> Self {
         Self {
             default_formats: default_formats(),
             bilingual_separator: default_bilingual_separator(),
-            strip_punctuation: false,
+            strip_punctuation: true,
         }
     }
 }
@@ -293,6 +296,7 @@ enabled = false
         assert_eq!(config.segment.max_duration, 5.5);
         assert!(!config.vad.enabled);
         assert!(!config.cache.enabled);
+        assert!(config.output.strip_punctuation);
     }
 
     #[test]

@@ -178,7 +178,7 @@ api_key = "your-api-key"
 
 [output]
 default_formats = ["srt"]
-strip_punctuation = false
+strip_punctuation = true
 ```
 
 ---

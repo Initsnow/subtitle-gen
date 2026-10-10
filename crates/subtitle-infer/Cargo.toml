@@ -18,7 +18,7 @@ crispasr = { version = "0.8", optional = true }
 crispasr-sys = { version = "0.8", optional = true }
 
 [features]
-default = ["native", "cuda"]
+default = []
 # Link the real CrispASR runtime. Requires either:
 #   A) a git dependency (build.rs of crispasr-sys cmakes libcrispasr), or
 #   B) a prebuilt libcrispasr with CRISPASR_LIB_DIR pointing at it.
