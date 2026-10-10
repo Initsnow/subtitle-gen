@@ -25,4 +25,5 @@ async-openai.workspace = true
 tracing.workspace = true
 toml.workspace = true
 futures-util.workspace = true
+dirs.workspace = true
 

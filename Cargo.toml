@@ -46,6 +46,7 @@ rayon = "1.10"
 sha2 = "0.10"
 toml = "0.8"
 futures-util = "0.3"
+dirs = "6"
 
 [profile.dev.package."*"]
 opt-level = 3

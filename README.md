@@ -130,7 +130,17 @@ subtitle-gen translate input.srt --out input.zh.srt --translate zh
 
 ## 配置文件 (`config.toml`)
 
-项目在当前工作目录存在 `config.toml` 时会自动加载。可参考 [`config.example.toml`](config.example.toml) 进行自定义配置：
+程序按以下优先级探测并加载配置文件：
+1. **命令行参数**：`--config <path>` 显式指定
+2. **环境变量**：`SUBTITLE_GEN_CONFIG=<path>`
+3. **当前工作目录**：`./config.toml`（项目级局部配置）
+4. **系统级配置目录**：`config.toml`（用户全局通用配置）：
+   - Windows: `%APPDATA%\subtitle-gen\config.toml`
+   - Linux: `~/.config/subtitle-gen/config.toml`（遵循 `$XDG_CONFIG_HOME`）
+   - macOS: `~/Library/Application Support/subtitle-gen/config.toml`
+5. 若均未找到，则自动回退至内置默认配置。
+
+可参考 [`config.example.toml`](config.example.toml) 进行自定义配置：
 
 ```toml
 # 缓存根目录

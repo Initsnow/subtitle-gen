@@ -58,7 +58,7 @@ pub fn compute_audio_sha256(samples: &[f32]) -> String {
         let byte_slice = unsafe {
             std::slice::from_raw_parts(
                 samples.as_ptr() as *const u8,
-                samples.len() * std::mem::size_of::<f32>(),
+                std::mem::size_of_val(samples),
             )
         };
         hasher.update(byte_slice);
