@@ -31,29 +31,29 @@ jobs:
         with:
           targets: ${{ matrix.target }}
 
-      - name: Download CrispASR native library (Windows)
+      - name: Download CrispASR native library (Windows CUDA)
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          $crispasrUrl = "https://github.com/CrispStrobe/CrispASR/releases/download/v0.8.42/libcrispasr-windows-x86_64.tar.gz"
+          $crispasrUrl = "https://github.com/CrispStrobe/CrispASR/releases/download/v0.8.42/libcrispasr-windows-x86_64-cuda.tar.gz"
           $downloadPath = "$env:RUNNER_TEMP\libcrispasr.tar.gz"
           $extractDir = "$env:RUNNER_TEMP\crispasr"
           Invoke-WebRequest -Uri $crispasrUrl -OutFile $downloadPath
           New-Item -ItemType Directory -Force -Path $extractDir | Out-Null
           tar -xzf $downloadPath -C $extractDir
-          $libDir = "$extractDir\libcrispasr-windows-x86_64\lib"
+          $libDir = (Get-ChildItem -Path $extractDir -Recurse -Directory -Filter "lib" | Select-Object -First 1).FullName
           echo "CRISPASR_LIB_DIR=$libDir" >> $env:GITHUB_ENV
 
-      - name: Download CrispASR native library (Linux)
+      - name: Download CrispASR native library (Linux CUDA)
         if: runner.os == 'Linux'
         run: |
-          crispasr_url="https://github.com/CrispStrobe/CrispASR/releases/download/v0.8.42/libcrispasr-linux-x86_64.tar.gz"
+          crispasr_url="https://github.com/CrispStrobe/CrispASR/releases/download/v0.8.42/libcrispasr-linux-x86_64-cuda.tar.gz"
           download_path="$RUNNER_TEMP/libcrispasr.tar.gz"
           extract_dir="$RUNNER_TEMP/crispasr"
           curl -sSL "$crispasr_url" -o "$download_path"
           mkdir -p "$extract_dir"
           tar -xzf "$download_path" -C "$extract_dir"
-          lib_dir="$extract_dir/libcrispasr-linux-x86_64/lib"
+          lib_dir=$(find "$extract_dir" -type d -name "lib" | head -n 1)
           echo "CRISPASR_LIB_DIR=$lib_dir" >> $GITHUB_ENV
           echo "LD_LIBRARY_PATH=$lib_dir:$LD_LIBRARY_PATH" >> $GITHUB_ENV
 
