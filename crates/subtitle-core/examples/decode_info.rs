@@ -5,7 +5,9 @@
 use subtitle_core::audio::AudioBuffer;
 
 fn main() {
-    let path = std::env::args().nth(1).expect("usage: decode_info <media-file>");
+    let path = std::env::args()
+        .nth(1)
+        .expect("usage: decode_info <media-file>");
     match AudioBuffer::load(&path) {
         Ok(buffer) => {
             let peak = buffer.samples().iter().fold(0.0f32, |a, &v| a.max(v.abs()));

@@ -22,8 +22,8 @@ fn asr_load_fails_gracefully_without_native_runtime() {
 
 #[test]
 fn vad_load_fails_gracefully_without_native_runtime() {
-    let err = VadSession::load("firered-vad", Default::default(), &LoadOptions::default())
-        .unwrap_err();
+    let err =
+        VadSession::load("firered-vad", Default::default(), &LoadOptions::default()).unwrap_err();
     let message = err.to_string();
     assert!(!message.is_empty());
 }

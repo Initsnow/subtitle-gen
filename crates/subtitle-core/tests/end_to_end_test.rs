@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use subtitle_core::config::{AppConfig, VadConfig};
 use subtitle_core::error::Result;
-use subtitle_core::formats::{parse_srt, SubtitleFormat, write_output_set};
+use subtitle_core::formats::{parse_srt, write_output_set, SubtitleFormat};
 use subtitle_core::pipeline::{InferenceBackend, PipelineOptions, SubtitlePipeline};
 use subtitle_core::types::TimedToken;
 
@@ -13,14 +13,29 @@ impl InferenceBackend for TestBackend {
     fn detect_speech_regions(&self, samples: &[f32]) -> Result<Vec<(f64, f64)>> {
         let dur = samples.len() as f64 / 16000.0;
         // Generate two realistic speech regions
-        Ok(vec![(0.1, (dur * 0.45).min(2.0)), ((dur * 0.5).min(2.5), (dur * 0.9).min(4.5))])
+        Ok(vec![
+            (0.1, (dur * 0.45).min(2.0)),
+            ((dur * 0.5).min(2.5), (dur * 0.9).min(4.5)),
+        ])
     }
 
-    fn transcribe(&self, _samples: &[f32], _hint: Option<&str>) -> Result<(String, Option<String>)> {
-        Ok(("こんにちは、世界。そして、新しい字幕です。".to_string(), Some("ja".to_string())))
+    fn transcribe(
+        &self,
+        _samples: &[f32],
+        _hint: Option<&str>,
+    ) -> Result<(String, Option<String>)> {
+        Ok((
+            "こんにちは、世界。そして、新しい字幕です。".to_string(),
+            Some("ja".to_string()),
+        ))
     }
 
-    fn align(&self, _samples: &[f32], _transcript: &str, _lang: Option<&str>) -> Result<Vec<TimedToken>> {
+    fn align(
+        &self,
+        _samples: &[f32],
+        _transcript: &str,
+        _lang: Option<&str>,
+    ) -> Result<Vec<TimedToken>> {
         // Return timed Japanese tokens with particles and conjunctions
         Ok(vec![
             TimedToken::new("こんにちは", 0.1, 0.8),
@@ -71,7 +86,10 @@ async fn test_end_to_end_pipeline_and_file_output() {
     };
 
     let result = pipeline.run(options).await.expect("pipeline run");
-    assert!(!result.subtitles.is_empty(), "subtitles should be generated");
+    assert!(
+        !result.subtitles.is_empty(),
+        "subtitles should be generated"
+    );
     assert_eq!(result.detected_language, Some("ja".to_string()));
 
     // Verify file output in multiple formats: SRT, VTT, JSON, TXT

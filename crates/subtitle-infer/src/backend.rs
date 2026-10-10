@@ -64,7 +64,10 @@ mod imp {
     pub(crate) fn classify_open_error(message: String) -> InferError {
         let lower = message.to_lowercase();
         if lower.contains("out of memory") || lower.contains("oom") || lower.contains("alloc") {
-            InferError::Oom { backend: "gpu".into(), reason: message }
+            InferError::Oom {
+                backend: "gpu".into(),
+                reason: message,
+            }
         } else if lower.contains("driver")
             || lower.contains("device")
             || lower.contains("backend")
@@ -72,7 +75,10 @@ mod imp {
             || lower.contains("vulkan")
             || lower.contains("metal")
         {
-            InferError::BackendUnavailable { backend: "gpu".into(), reason: message }
+            InferError::BackendUnavailable {
+                backend: "gpu".into(),
+                reason: message,
+            }
         } else {
             InferError::Runtime { code: -1, message }
         }
@@ -97,18 +103,17 @@ mod imp {
         }
 
         /// Transcribe 16 kHz mono samples with an optional language hint.
-        pub fn transcribe(
-            &self,
-            samples: &[f32],
-            language: Option<&str>,
-        ) -> Result<RawTranscript> {
+        pub fn transcribe(&self, samples: &[f32], language: Option<&str>) -> Result<RawTranscript> {
             if samples.is_empty() {
                 return Err(InferError::InvalidArgument("empty audio samples".into()));
             }
             let segments = self
                 .inner
                 .transcribe_with_language(samples, language)
-                .map_err(|msg| InferError::Runtime { code: -4, message: msg })?;
+                .map_err(|msg| InferError::Runtime {
+                    code: -4,
+                    message: msg,
+                })?;
 
             let detected = self.detected_language();
             Ok(RawTranscript {

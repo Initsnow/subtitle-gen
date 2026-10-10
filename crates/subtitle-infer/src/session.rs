@@ -55,11 +55,7 @@ impl std::fmt::Debug for AsrHandle {
 /// machine: GPU budget first (runtime default), CPU-only budget (`0`) as the
 /// final rung. GPU initialization failures degrade with a logged warning;
 /// hard errors (missing model file, corrupt GGUF) propagate immediately.
-pub fn open_asr_session(
-    model_spec: &str,
-    quant: &str,
-    options: &LoadOptions,
-) -> Result<AsrHandle> {
+pub fn open_asr_session(model_spec: &str, quant: &str, options: &LoadOptions) -> Result<AsrHandle> {
     let model_path = resolve_model_path(model_spec, quant)?;
     let selector = match &options.ladder {
         Some(ladder) => FallbackSelector::from_candidates(ladder.clone()),
@@ -76,7 +72,11 @@ pub fn open_asr_session(
     };
 
     let (session, plan) = selector.select(attempt)?;
-    Ok(AsrHandle { session, plan, model_path })
+    Ok(AsrHandle {
+        session,
+        plan,
+        model_path,
+    })
 }
 
 #[cfg(test)]
@@ -88,7 +88,10 @@ mod tests {
     fn effective_threads_falls_back_to_core_count() {
         let opts = LoadOptions::default();
         assert!(opts.effective_threads() >= 1);
-        let explicit = LoadOptions { n_threads: 4, ..LoadOptions::default() };
+        let explicit = LoadOptions {
+            n_threads: 4,
+            ..LoadOptions::default()
+        };
         assert_eq!(explicit.effective_threads(), 4);
     }
 

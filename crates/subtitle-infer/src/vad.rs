@@ -20,7 +20,7 @@ use std::path::{Path, PathBuf};
 use crate::backend;
 use crate::device::{DevicePlan, GpuBackend};
 use crate::error::{InferError, Result};
-use crate::model::{DEFAULT_QUANT, resolve_model_path};
+use crate::model::{resolve_model_path, DEFAULT_QUANT};
 use crate::session::LoadOptions;
 
 /// VAD tuning knobs, matching the Python `VADConfig` defaults.
@@ -259,7 +259,10 @@ mod tests {
 
     #[test]
     fn region_tuple_conversion() {
-        let region = SpeechRegion { start: 1.0, end: 2.5 };
+        let region = SpeechRegion {
+            start: 1.0,
+            end: 2.5,
+        };
         let (start, end) = region.into();
         assert_eq!((start, end), (1.0, 2.5));
     }

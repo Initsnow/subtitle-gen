@@ -17,12 +17,20 @@ pub struct TimedToken {
 
 impl TimedToken {
     pub fn new(text: impl Into<String>, start: f64, end: f64) -> Self {
-        Self { text: text.into(), start, end }
+        Self {
+            text: text.into(),
+            start,
+            end,
+        }
     }
 
     /// Return a copy shifted by `offset` seconds (may be negative).
     pub fn shifted(&self, offset: f64) -> Self {
-        Self { text: self.text.clone(), start: self.start + offset, end: self.end + offset }
+        Self {
+            text: self.text.clone(),
+            start: self.start + offset,
+            end: self.end + offset,
+        }
     }
 }
 
@@ -109,7 +117,13 @@ pub struct TranscriptChunk {
 
 impl TranscriptChunk {
     pub fn new(index: usize, start: f64, end: f64, text: impl Into<String>) -> Self {
-        Self { index, start, end, text: text.into(), language: None }
+        Self {
+            index,
+            start,
+            end,
+            text: text.into(),
+            language: None,
+        }
     }
 }
 

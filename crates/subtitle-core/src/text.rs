@@ -21,8 +21,8 @@ pub const CJK_PUNCTUATION: &str = "，。；：！？、";
 pub const ATTACHABLE_PUNCTUATION: &str = ",.;:!?，。；：！？、)]}）】」』\"'”’";
 
 const BREAK_BEFORE_WORDS: &[&str] = &[
-    "and", "as", "because", "but", "for", "if", "in", "nor", "of", "on", "or", "so", "that",
-    "to", "when", "while", "with", "yet",
+    "and", "as", "because", "but", "for", "if", "in", "nor", "of", "on", "or", "so", "that", "to",
+    "when", "while", "with", "yet",
 ];
 
 const SPURIOUS_GAP: f64 = 3.0;
@@ -58,17 +58,39 @@ pub struct SegmentConfig {
     pub pause_threshold: f64,
 }
 
-fn default_mode() -> String { "local".into() }
-fn default_min_duration() -> f64 { 0.833 }
-fn default_max_duration() -> f64 { 7.0 }
-fn default_max_lines() -> usize { 2 }
-fn default_max_chars_en() -> usize { 42 }
-fn default_max_chars_zh() -> usize { 16 }
-fn default_max_chars_ja() -> usize { 13 }
-fn default_max_cps_en() -> f64 { 20.0 }
-fn default_max_cps_zh() -> f64 { 9.0 }
-fn default_max_cps_ja() -> f64 { 4.0 }
-fn default_pause_threshold() -> f64 { 0.65 }
+fn default_mode() -> String {
+    "local".into()
+}
+fn default_min_duration() -> f64 {
+    0.833
+}
+fn default_max_duration() -> f64 {
+    7.0
+}
+fn default_max_lines() -> usize {
+    2
+}
+fn default_max_chars_en() -> usize {
+    42
+}
+fn default_max_chars_zh() -> usize {
+    16
+}
+fn default_max_chars_ja() -> usize {
+    13
+}
+fn default_max_cps_en() -> f64 {
+    20.0
+}
+fn default_max_cps_zh() -> f64 {
+    9.0
+}
+fn default_max_cps_ja() -> f64 {
+    4.0
+}
+fn default_pause_threshold() -> f64 {
+    0.65
+}
 
 impl Default for SegmentConfig {
     fn default() -> Self {
@@ -99,7 +121,12 @@ pub struct SegmentAtom {
 
 impl SegmentAtom {
     pub fn new(id: usize, text: impl Into<String>, start: f64, end: f64) -> Self {
-        Self { id, text: text.into(), start, end }
+        Self {
+            id,
+            text: text.into(),
+            start,
+            end,
+        }
     }
 }
 
@@ -141,21 +168,19 @@ static LINDERA_SEGMENTER: OnceLock<Option<lindera::segmenter::Segmenter>> = Once
 
 fn get_lindera_segmenter() -> Option<&'static lindera::segmenter::Segmenter> {
     LINDERA_SEGMENTER
-        .get_or_init(|| {
-            match lindera::dictionary::load_dictionary("embedded://ipadic") {
-                Ok(dict) => {
-                    Some(lindera::segmenter::Segmenter::new(
-                        lindera::mode::Mode::Normal,
-                        dict,
-                        None,
-                    ))
-                }
+        .get_or_init(
+            || match lindera::dictionary::load_dictionary("embedded://ipadic") {
+                Ok(dict) => Some(lindera::segmenter::Segmenter::new(
+                    lindera::mode::Mode::Normal,
+                    dict,
+                    None,
+                )),
                 Err(err) => {
                     tracing::warn!("Failed to load embedded IPADIC dictionary: {err}");
                     None
                 }
-            }
-        })
+            },
+        )
         .as_ref()
 }
 
@@ -204,7 +229,10 @@ impl LocalSegmenter {
         let refine_mode = refine_mode
             .map(String::from)
             .unwrap_or_else(|| refine_mode_for_segment_mode(&config.mode));
-        Self { config, refine_mode }
+        Self {
+            config,
+            refine_mode,
+        }
     }
 
     pub fn segment(
@@ -234,8 +262,7 @@ impl LocalSegmenter {
         }
 
         let source_text = join_text_parts(atoms.iter().map(|a| a.text.as_str()));
-        let resolved_language =
-            normalize_language(language, context_text.unwrap_or(&source_text));
+        let resolved_language = normalize_language(language, context_text.unwrap_or(&source_text));
         let groups = sentence_groups(&atoms, &self.config);
 
         if self.refine_mode == "none" {
@@ -502,7 +529,10 @@ fn japanese_pos_boundary_score(left_text: &str, right_text: &str) -> f64 {
     if let Some(last) = left_morphs.last() {
         if last.pos == "助詞" {
             score = score.max(65.0);
-        } else if last.conjugation_form.contains("連用形") || last.surface == "て" || last.surface == "で" {
+        } else if last.conjugation_form.contains("連用形")
+            || last.surface == "て"
+            || last.surface == "で"
+        {
             score = score.max(40.0);
         }
     }
@@ -527,8 +557,7 @@ fn merge_short_groups(
             continue;
         }
 
-        if index + 1 < groups.len()
-            && can_merge(group, &groups[index + 1], by_id, config, language)
+        if index + 1 < groups.len() && can_merge(group, &groups[index + 1], by_id, config, language)
         {
             let mut combined = group.clone();
             combined.extend_from_slice(&groups[index + 1]);
@@ -581,11 +610,7 @@ fn is_hard_over_limit(metrics: &GroupMetrics, config: &SegmentConfig, language: 
         || metrics.length > max_total_chars(config, language)
 }
 
-fn min_duration_penalty(
-    left: &GroupMetrics,
-    right: &GroupMetrics,
-    config: &SegmentConfig,
-) -> f64 {
+fn min_duration_penalty(left: &GroupMetrics, right: &GroupMetrics, config: &SegmentConfig) -> f64 {
     let mut penalty = 0.0;
     if left.duration < config.min_duration {
         penalty += (config.min_duration - left.duration) / config.min_duration.max(0.001) * 35.0;
@@ -643,7 +668,10 @@ fn group_atoms<'a>(
     group: &[usize],
     by_id: &std::collections::HashMap<usize, &'a SegmentAtom>,
 ) -> Vec<&'a SegmentAtom> {
-    group.iter().filter_map(|id| by_id.get(id).copied()).collect()
+    group
+        .iter()
+        .filter_map(|id| by_id.get(id).copied())
+        .collect()
 }
 
 pub fn is_major_boundary(text: &str) -> bool {
@@ -665,7 +693,8 @@ pub fn is_soft_boundary(text: &str) -> bool {
 }
 
 fn strip_trailing_quotes(text: &str) -> &str {
-    text.trim().trim_end_matches(|c| TRAILING_QUOTES.contains(c))
+    text.trim()
+        .trim_end_matches(|c| TRAILING_QUOTES.contains(c))
 }
 
 fn starts_with_break_before_word(text: &str) -> bool {
@@ -943,8 +972,10 @@ pub fn segments_from_atom_groups(
     let mut segments = Vec::new();
 
     for group in groups {
-        let group_atoms: Vec<&SegmentAtom> =
-            group.iter().filter_map(|id| by_id.get(id).copied()).collect();
+        let group_atoms: Vec<&SegmentAtom> = group
+            .iter()
+            .filter_map(|id| by_id.get(id).copied())
+            .collect();
         if group_atoms.is_empty() {
             continue;
         }
@@ -986,7 +1017,10 @@ pub fn groups_from_text_parts(parts: &[String], atoms: &[SegmentAtom]) -> Vec<Ve
             return Vec::new();
         }
 
-        let group: Vec<usize> = atoms[start_index..atom_index].iter().map(|a| a.id).collect();
+        let group: Vec<usize> = atoms[start_index..atom_index]
+            .iter()
+            .map(|a| a.id)
+            .collect();
         if group.is_empty() {
             return Vec::new();
         }
@@ -1000,7 +1034,9 @@ pub fn groups_from_text_parts(parts: &[String], atoms: &[SegmentAtom]) -> Vec<Ve
 }
 
 pub fn normalize_for_mapping(text: &str) -> String {
-    text.chars().filter(|c| !c.is_whitespace() && *c != '|').collect()
+    text.chars()
+        .filter(|c| !c.is_whitespace() && *c != '|')
+        .collect()
 }
 
 // ---------------------------------------------------------------------------
@@ -1013,7 +1049,10 @@ pub fn normalize_for_alignment(text: &str, language: Option<&str>) -> String {
     use unicode_normalization::UnicodeNormalization;
     let nfkc: String = text.nfkc().collect();
     let lowered = nfkc.to_lowercase();
-    let filtered: String = lowered.chars().filter(|c: &char| c.is_alphanumeric()).collect();
+    let filtered: String = lowered
+        .chars()
+        .filter(|c: &char| c.is_alphanumeric())
+        .collect();
     if let Some(lang) = language {
         let l = lang.to_ascii_lowercase();
         if l.starts_with("ja") || l.starts_with("jp") {
@@ -1056,7 +1095,9 @@ pub fn align_chars(ref_text: &str, asr_text: &str) -> Vec<Option<usize>> {
     } else {
         let band = choose_alignment_band(n, m);
         match band {
-            Some(b) => align_chars_banded(&ref_chars, &asr_chars, b).unwrap_or_else(|| vec![None; n]),
+            Some(b) => {
+                align_chars_banded(&ref_chars, &asr_chars, b).unwrap_or_else(|| vec![None; n])
+            }
             None => vec![None; n],
         }
     }
@@ -1374,7 +1415,11 @@ pub fn finalize_spans(spans: &[Option<(f64, f64)>], duration: f64) -> Vec<(f64, 
         }
         let count = run_end - index;
         let prev_end = if index > 0 { ends[index - 1] } else { None };
-        let next_start = if run_end < total { starts[run_end] } else { None };
+        let next_start = if run_end < total {
+            starts[run_end]
+        } else {
+            None
+        };
 
         match (prev_end, next_start) {
             (Some(pe), Some(ns)) => {
@@ -1471,8 +1516,14 @@ pub fn plan_fixed_windows(
     window_size: f64,
     overlap: Option<f64>,
 ) -> Vec<AudioWindow> {
-    let window_size = if window_size <= 0.0 { duration.max(1.0) } else { window_size };
-    let overlap = overlap.unwrap_or(1.0).clamp(0.0, (window_size - 0.001).max(0.0));
+    let window_size = if window_size <= 0.0 {
+        duration.max(1.0)
+    } else {
+        window_size
+    };
+    let overlap = overlap
+        .unwrap_or(1.0)
+        .clamp(0.0, (window_size - 0.001).max(0.0));
 
     let mut windows = Vec::new();
     let mut cursor = 0.0;
@@ -1492,9 +1543,7 @@ pub fn plan_fixed_windows(
 }
 
 /// Merge shifted tokens from multiple windows and deduplicate overlaps.
-pub fn merge_window_tokens(
-    window_tokens: &[(AudioWindow, Vec<TimedToken>)],
-) -> Vec<TimedToken> {
+pub fn merge_window_tokens(window_tokens: &[(AudioWindow, Vec<TimedToken>)]) -> Vec<TimedToken> {
     let mut tokens: Vec<TimedToken> = Vec::new();
     let mut prev_window_end: Option<f64> = None;
 
@@ -1504,9 +1553,16 @@ pub fn merge_window_tokens(
             a.start
                 .partial_cmp(&b.start)
                 .unwrap_or(std::cmp::Ordering::Equal)
-                .then_with(|| a.end.partial_cmp(&b.end).unwrap_or(std::cmp::Ordering::Equal))
+                .then_with(|| {
+                    a.end
+                        .partial_cmp(&b.end)
+                        .unwrap_or(std::cmp::Ordering::Equal)
+                })
         });
-        let shifted: Vec<TimedToken> = cleaned.into_iter().map(|t| t.shifted(window.start)).collect();
+        let shifted: Vec<TimedToken> = cleaned
+            .into_iter()
+            .map(|t| t.shifted(window.start))
+            .collect();
 
         if !tokens.is_empty() {
             if let Some(p_end) = prev_window_end {
@@ -1553,7 +1609,10 @@ mod tests {
             TimedToken::new("one", 1.6, 2.2),
         ];
 
-        let config = SegmentConfig { min_duration: 0.2, ..Default::default() };
+        let config = SegmentConfig {
+            min_duration: 0.2,
+            ..Default::default()
+        };
         let segmenter = LocalSegmenter::new(Some(config), None);
         let segments = segmenter.segment(&tokens, Some("Hello world. Next one."), Some("English"));
 
@@ -1579,10 +1638,8 @@ mod tests {
 
     #[test]
     fn test_project_context_punctuation_does_not_duplicate_partial_suffixes() {
-        let projected = project_context_punctuation(
-            &[TimedToken::new("Hello.", 0.0, 0.4)],
-            Some("Hello.\""),
-        );
+        let projected =
+            project_context_punctuation(&[TimedToken::new("Hello.", 0.0, 0.4)], Some("Hello.\""));
         assert_eq!(projected, vec![TimedToken::new("Hello.\"", 0.0, 0.4)]);
     }
 

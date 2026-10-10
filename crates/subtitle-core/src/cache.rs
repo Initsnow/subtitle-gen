@@ -29,9 +29,15 @@ pub struct CacheConfig {
     pub max_media_entries: usize,
 }
 
-fn default_cache_enabled() -> bool { false }
-fn default_cleanup_enabled() -> bool { true }
-fn default_max_media_entries() -> usize { 12 }
+fn default_cache_enabled() -> bool {
+    false
+}
+fn default_cleanup_enabled() -> bool {
+    true
+}
+fn default_max_media_entries() -> usize {
+    12
+}
 
 impl Default for CacheConfig {
     fn default() -> Self {
@@ -94,23 +100,28 @@ pub fn media_cache_id(path: &Path) -> String {
 
 /// Filename stem for window chunks: `chunk-00001-0.000-5.200`.
 pub fn chunk_cache_stem(window: &AudioWindow) -> String {
-    format!("chunk-{:05}-{:.3}-{:.3}", window.index, window.start, window.end)
+    format!(
+        "chunk-{:05}-{:.3}-{:.3}",
+        window.index, window.start, window.end
+    )
 }
 
 /// Cache file path for a window chunk's ASR transcript and alignment.
 pub fn asr_cache_path(cache_root: &Path, media_id: &str, window: &AudioWindow) -> PathBuf {
-    cache_root
-        .join("asr")
-        .join(media_id)
-        .join(format!("{}{}", chunk_cache_stem(window), ASR_CACHE_SUFFIX))
+    cache_root.join("asr").join(media_id).join(format!(
+        "{}{}",
+        chunk_cache_stem(window),
+        ASR_CACHE_SUFFIX
+    ))
 }
 
 /// Cache file path for a refine window chunk.
 pub fn refine_cache_path(cache_root: &Path, media_id: &str, window: &AudioWindow) -> PathBuf {
-    cache_root
-        .join("refine")
-        .join(media_id)
-        .join(format!("{}{}", chunk_cache_stem(window), ASR_CACHE_SUFFIX))
+    cache_root.join("refine").join(media_id).join(format!(
+        "{}{}",
+        chunk_cache_stem(window),
+        ASR_CACHE_SUFFIX
+    ))
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -402,7 +413,10 @@ fn media_cache_mtime(root: &Path, media_id: &str) -> std::time::SystemTime {
 fn remove_media_cache(root: &Path, media_id: &str) {
     let _ = fs::remove_dir_all(root.join("asr").join(media_id));
     let _ = fs::remove_dir_all(root.join("refine").join(media_id));
-    let _ = fs::remove_file(root.join("audio").join(format!("{media_id}{AUDIO_CACHE_SUFFIX}")));
+    let _ = fs::remove_file(
+        root.join("audio")
+            .join(format!("{media_id}{AUDIO_CACHE_SUFFIX}")),
+    );
 }
 
 #[cfg(test)]
@@ -427,7 +441,10 @@ mod tests {
         .unwrap();
 
         let loaded = load_cached_asr_result(&path, "qwen3-asr", Some("en"));
-        assert_eq!(loaded, Some(("Hello world".to_string(), Some("en".to_string()))));
+        assert_eq!(
+            loaded,
+            Some(("Hello world".to_string(), Some("en".to_string())))
+        );
 
         // Wrong model or language returns None
         assert!(load_cached_asr_result(&path, "other-model", Some("en")).is_none());
@@ -438,7 +455,8 @@ mod tests {
 
     #[test]
     fn test_alignment_cache_save_and_load() {
-        let temp_dir = std::env::temp_dir().join(format!("test_align_cache_{}", std::process::id()));
+        let temp_dir =
+            std::env::temp_dir().join(format!("test_align_cache_{}", std::process::id()));
         let _ = fs::remove_dir_all(&temp_dir);
         let path = temp_dir.join("test.json");
 
@@ -462,7 +480,9 @@ mod tests {
         assert_eq!(loaded, Some(tokens));
 
         // Changed transcript invalidates cache
-        assert!(load_cached_alignment_tokens(&path, "qwen3-aligner", "en", "Hello Earth").is_none());
+        assert!(
+            load_cached_alignment_tokens(&path, "qwen3-aligner", "en", "Hello Earth").is_none()
+        );
 
         let _ = fs::remove_dir_all(&temp_dir);
     }

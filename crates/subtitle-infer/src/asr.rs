@@ -85,7 +85,10 @@ impl AsrSession {
             .trim()
             .to_string();
 
-        Ok(AsrOutput { text, language: raw.detected_language.or(hint) })
+        Ok(AsrOutput {
+            text,
+            language: raw.detected_language.or(hint),
+        })
     }
 }
 

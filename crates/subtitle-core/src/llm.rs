@@ -26,8 +26,8 @@ Return only valid JSON in compact format: [{\"i\":<id>,\"t\":\"<corrected text>\
 Only include items you actually corrected; omit unchanged ones.
 Do not change meaning.";
 
-use std::sync::Arc;
 use futures_util::StreamExt;
+use std::sync::Arc;
 
 pub type StreamCallback = Arc<dyn Fn(&str) + Send + Sync>;
 
@@ -61,13 +61,27 @@ pub struct LLMConfig {
     pub thinking_effort: Option<String>,
 }
 
-fn default_base_url() -> String { "https://api.openai.com/v1".into() }
-fn default_api_key() -> String { String::new() }
-fn default_timeout() -> f64 { 60.0 }
-fn default_temperature() -> f32 { 0.0 }
-fn default_batch_size() -> usize { 40 }
-fn default_concurrency() -> usize { 2 }
-fn default_max_retries() -> usize { 2 }
+fn default_base_url() -> String {
+    "https://api.openai.com/v1".into()
+}
+fn default_api_key() -> String {
+    String::new()
+}
+fn default_timeout() -> f64 {
+    60.0
+}
+fn default_temperature() -> f32 {
+    0.0
+}
+fn default_batch_size() -> usize {
+    40
+}
+fn default_concurrency() -> usize {
+    2
+}
+fn default_max_retries() -> usize {
+    2
+}
 
 impl Default for LLMConfig {
     fn default() -> Self {
@@ -121,11 +135,7 @@ impl SubtitleLlm {
         if items.is_empty() {
             return Ok(Vec::new());
         }
-        let model = self
-            .config
-            .model
-            .as_deref()
-            .unwrap_or("gpt-4o-mini");
+        let model = self.config.model.as_deref().unwrap_or("gpt-4o-mini");
 
         let batch_size = if self.config.batch_size == 0 {
             items.len()
@@ -151,7 +161,12 @@ impl SubtitleLlm {
             });
 
             let response_text = self
-                .complete_json(PROOFREAD_SYSTEM_PROMPT, &payload.to_string(), model, on_token.as_ref())
+                .complete_json(
+                    PROOFREAD_SYSTEM_PROMPT,
+                    &payload.to_string(),
+                    model,
+                    on_token.as_ref(),
+                )
                 .await?;
             let corrections = parse_proofread_json(&response_text)?;
 
@@ -175,11 +190,7 @@ impl SubtitleLlm {
         if items.is_empty() {
             return Ok(Vec::new());
         }
-        let model = self
-            .config
-            .model
-            .as_deref()
-            .unwrap_or("gpt-4o-mini");
+        let model = self.config.model.as_deref().unwrap_or("gpt-4o-mini");
 
         let batch_size = if self.config.batch_size == 0 {
             items.len()
@@ -210,7 +221,12 @@ impl SubtitleLlm {
             });
 
             let response_text = self
-                .complete_json(TRANSLATION_SYSTEM_PROMPT, &payload.to_string(), model, on_token.as_ref())
+                .complete_json(
+                    TRANSLATION_SYSTEM_PROMPT,
+                    &payload.to_string(),
+                    model,
+                    on_token.as_ref(),
+                )
                 .await?;
             let translations = parse_translation_json(&response_text, &expected_ids)?;
 
@@ -260,7 +276,8 @@ impl SubtitleLlm {
 
             let mut text = String::new();
             while let Some(chunk_res) = stream.next().await {
-                let chunk = chunk_res.map_err(|e| Error::Io(std::io::Error::other(e.to_string())))?;
+                let chunk =
+                    chunk_res.map_err(|e| Error::Io(std::io::Error::other(e.to_string())))?;
                 for choice in chunk.choices {
                     if let Some(delta) = choice.delta.content {
                         cb(&delta);
@@ -329,7 +346,9 @@ pub fn parse_translation_json(raw: &str, expected_ids: &[usize]) -> Result<HashM
 
     for &id in expected_ids {
         if !map.contains_key(&id) {
-            return Err(Error::Llm(format!("LLM translation missing expected cue id: {id}")));
+            return Err(Error::Llm(format!(
+                "LLM translation missing expected cue id: {id}"
+            )));
         }
     }
     Ok(map)

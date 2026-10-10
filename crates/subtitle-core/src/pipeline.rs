@@ -105,7 +105,10 @@ impl<B: InferenceBackend + 'static> SubtitlePipeline<B> {
     /// Run end-to-end subtitle generation on a media file.
     pub async fn run(&self, options: PipelineOptions) -> Result<PipelineResult> {
         let input_path = &options.input_path;
-        report(&options.progress, &format!("input: {}", input_path.display()));
+        report(
+            &options.progress,
+            &format!("input: {}", input_path.display()),
+        );
 
         let segment_mode = options
             .segment_mode
@@ -331,11 +334,12 @@ impl<B: InferenceBackend + 'static> SubtitlePipeline<B> {
         let mut chunks = Vec::new();
         let mut segmented_subtitles = Vec::new();
 
-        let refine_mode = if segment_mode == "local" { "hard" } else { "none" };
-        let segmenter = LocalSegmenter::new(
-            Some(self.config.segment.clone()),
-            Some(refine_mode),
-        );
+        let refine_mode = if segment_mode == "local" {
+            "hard"
+        } else {
+            "none"
+        };
+        let segmenter = LocalSegmenter::new(Some(self.config.segment.clone()), Some(refine_mode));
 
         for pw in &processed_windows {
             if detected_language.is_none() && pw.language.is_some() {
@@ -388,7 +392,9 @@ impl<B: InferenceBackend + 'static> SubtitlePipeline<B> {
             if !self.config.llm.api_key.is_empty() {
                 let llm = SubtitleLlm::new(self.config.llm.clone());
                 report(&options.progress, "proofreading subtitles with LLM");
-                subtitles = llm.proofread(&subtitles, options.stream_token.clone()).await?;
+                subtitles = llm
+                    .proofread(&subtitles, options.stream_token.clone())
+                    .await?;
                 report(
                     &options.progress,
                     &format!("translating subtitles to {target_lang} with LLM"),
@@ -428,7 +434,14 @@ impl<B: InferenceBackend + 'static> SubtitlePipeline<B> {
             return Ok(Vec::new());
         }
 
-        report(&progress, &format!("aligning {} line(s) against {}", lines.len(), audio_path.display()));
+        report(
+            &progress,
+            &format!(
+                "aligning {} line(s) against {}",
+                lines.len(),
+                audio_path.display()
+            ),
+        );
         report(&progress, "preparing 16 kHz mono audio");
 
         let audio = AudioBuffer::load(audio_path)?;
@@ -443,7 +456,10 @@ impl<B: InferenceBackend + 'static> SubtitlePipeline<B> {
             plan_fixed_windows(duration, 30.0, Some(1.0))
         };
 
-        report(&progress, &format!("planned {} alignment window(s)", windows.len()));
+        report(
+            &progress,
+            &format!("planned {} alignment window(s)", windows.len()),
+        );
 
         let use_cache = self.config.cache.enabled;
         let cache_root = if use_cache {
@@ -472,7 +488,9 @@ impl<B: InferenceBackend + 'static> SubtitlePipeline<B> {
 
             let cache_file = asr_cache_path(&cache_root, &media_id, window);
             let (transcript, lang) = if use_cache && !overwrite_cache {
-                if let Some(c) = load_cached_asr_result(&cache_file, &self.config.model.asr_model, language) {
+                if let Some(c) =
+                    load_cached_asr_result(&cache_file, &self.config.model.asr_model, language)
+                {
                     report(
                         &progress,
                         &format!("window {chunk_num}/{total_windows}: ASR cache hit"),
@@ -480,13 +498,27 @@ impl<B: InferenceBackend + 'static> SubtitlePipeline<B> {
                     c
                 } else {
                     let res = self.backend.transcribe(window_samples, language)?;
-                    let _ = save_asr_result(&cache_file, window, &self.config.model.asr_model, language, &res.0, res.1.as_deref());
+                    let _ = save_asr_result(
+                        &cache_file,
+                        window,
+                        &self.config.model.asr_model,
+                        language,
+                        &res.0,
+                        res.1.as_deref(),
+                    );
                     res
                 }
             } else {
                 let res = self.backend.transcribe(window_samples, language)?;
                 if use_cache {
-                    let _ = save_asr_result(&cache_file, window, &self.config.model.asr_model, language, &res.0, res.1.as_deref());
+                    let _ = save_asr_result(
+                        &cache_file,
+                        window,
+                        &self.config.model.asr_model,
+                        language,
+                        &res.0,
+                        res.1.as_deref(),
+                    );
                 }
                 res
             };
@@ -502,21 +534,46 @@ impl<B: InferenceBackend + 'static> SubtitlePipeline<B> {
                 );
                 let alignment_lang = language.or(detected_language.as_deref()).unwrap_or("en");
                 let tokens = if use_cache && !overwrite_cache {
-                    if let Some(c_toks) = load_cached_alignment_tokens(&cache_file, &self.config.model.aligner_model, alignment_lang, &transcript) {
+                    if let Some(c_toks) = load_cached_alignment_tokens(
+                        &cache_file,
+                        &self.config.model.aligner_model,
+                        alignment_lang,
+                        &transcript,
+                    ) {
                         report(
                             &progress,
                             &format!("window {chunk_num}/{total_windows}: alignment cache hit"),
                         );
                         c_toks
                     } else {
-                        let toks = self.backend.align(window_samples, &transcript, Some(alignment_lang))?;
-                        let _ = save_alignment_tokens(&cache_file, window, &self.config.model.aligner_model, alignment_lang, &transcript, &toks);
+                        let toks = self.backend.align(
+                            window_samples,
+                            &transcript,
+                            Some(alignment_lang),
+                        )?;
+                        let _ = save_alignment_tokens(
+                            &cache_file,
+                            window,
+                            &self.config.model.aligner_model,
+                            alignment_lang,
+                            &transcript,
+                            &toks,
+                        );
                         toks
                     }
                 } else {
-                    let toks = self.backend.align(window_samples, &transcript, Some(alignment_lang))?;
+                    let toks =
+                        self.backend
+                            .align(window_samples, &transcript, Some(alignment_lang))?;
                     if use_cache {
-                        let _ = save_alignment_tokens(&cache_file, window, &self.config.model.aligner_model, alignment_lang, &transcript, &toks);
+                        let _ = save_alignment_tokens(
+                            &cache_file,
+                            window,
+                            &self.config.model.aligner_model,
+                            alignment_lang,
+                            &transcript,
+                            &toks,
+                        );
                     }
                     toks
                 };
@@ -535,12 +592,16 @@ impl<B: InferenceBackend + 'static> SubtitlePipeline<B> {
 
         if !spans.iter().any(|s| s.is_some()) {
             return Err(Error::Pipeline(
-                "No recognized speech tokens could be matched to the input lyrics/text lines".into(),
+                "No recognized speech tokens could be matched to the input lyrics/text lines"
+                    .into(),
             ));
         }
 
         let rough = finalize_spans(&spans, duration);
-        report(&progress, &format!("matched rough spans for {} lines", lines.len()));
+        report(
+            &progress,
+            &format!("matched rough spans for {} lines", lines.len()),
+        );
 
         if !refine {
             let items = lines
@@ -577,17 +638,42 @@ impl<B: InferenceBackend + 'static> SubtitlePipeline<B> {
                 let align_lang = match_lang.unwrap_or("en");
 
                 let local_tokens = if use_cache && !overwrite_cache {
-                    if let Some(t) = load_cached_alignment_tokens(&refine_cache, &self.config.model.aligner_model, align_lang, line) {
+                    if let Some(t) = load_cached_alignment_tokens(
+                        &refine_cache,
+                        &self.config.model.aligner_model,
+                        align_lang,
+                        line,
+                    ) {
                         t
                     } else {
-                        let t = self.backend.align(window_samples, line, Some(align_lang)).unwrap_or_default();
-                        let _ = save_alignment_tokens(&refine_cache, &window, &self.config.model.aligner_model, align_lang, line, &t);
+                        let t = self
+                            .backend
+                            .align(window_samples, line, Some(align_lang))
+                            .unwrap_or_default();
+                        let _ = save_alignment_tokens(
+                            &refine_cache,
+                            &window,
+                            &self.config.model.aligner_model,
+                            align_lang,
+                            line,
+                            &t,
+                        );
                         t
                     }
                 } else {
-                    let t = self.backend.align(window_samples, line, Some(align_lang)).unwrap_or_default();
+                    let t = self
+                        .backend
+                        .align(window_samples, line, Some(align_lang))
+                        .unwrap_or_default();
                     if use_cache {
-                        let _ = save_alignment_tokens(&refine_cache, &window, &self.config.model.aligner_model, align_lang, line, &t);
+                        let _ = save_alignment_tokens(
+                            &refine_cache,
+                            &window,
+                            &self.config.model.aligner_model,
+                            align_lang,
+                            line,
+                            &t,
+                        );
                     }
                     t
                 };
@@ -817,7 +903,8 @@ pub fn snap_boundaries_to_quiet(
         let nominal = part.0;
         let last_snapped = *snapped.last().unwrap();
         let low = (nominal - SNAP_TOLERANCE_SECONDS).max(last_snapped + 0.1);
-        let high = (nominal + SNAP_TOLERANCE_SECONDS).min(parts.last().unwrap().1 - SNAP_MIN_PART_SECONDS);
+        let high =
+            (nominal + SNAP_TOLERANCE_SECONDS).min(parts.last().unwrap().1 - SNAP_MIN_PART_SECONDS);
 
         if high <= low {
             snapped.push(nominal);

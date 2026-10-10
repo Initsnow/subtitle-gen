@@ -85,7 +85,11 @@ impl InferenceEngine {
                             .map_err(|e| CoreError::Pipeline(e.to_string()));
                         let _ = resp.send(res);
                     }
-                    InferenceCommand::Transcribe { samples, hint, resp } => {
+                    InferenceCommand::Transcribe {
+                        samples,
+                        hint,
+                        resp,
+                    } => {
                         let res = asr
                             .transcribe(&samples, hint.as_deref())
                             .map(|out| (out.text, out.language))

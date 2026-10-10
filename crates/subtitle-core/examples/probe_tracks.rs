@@ -1,21 +1,29 @@
+use std::fs::File;
 use symphonia::core::codecs::audio::AudioDecoderOptions;
 use symphonia::core::codecs::CodecParameters;
 use symphonia::core::formats::probe::Hint;
 use symphonia::core::formats::FormatOptions;
 use symphonia::core::io::MediaSourceStream;
 use symphonia::core::meta::MetadataOptions;
-use std::fs::File;
 
 fn main() {
     let path = std::env::args().nth(1).unwrap();
     let src = File::open(&path).unwrap();
     let mss = MediaSourceStream::new(Box::new(src), Default::default());
     let mut hint = Hint::new();
-    if let Some(ext) = std::path::Path::new(&path).extension().and_then(|e| e.to_str()) {
+    if let Some(ext) = std::path::Path::new(&path)
+        .extension()
+        .and_then(|e| e.to_str())
+    {
         hint.with_extension(ext);
     }
     let probed = symphonia::default::get_probe()
-        .probe(&hint, mss, FormatOptions::default(), MetadataOptions::default())
+        .probe(
+            &hint,
+            mss,
+            FormatOptions::default(),
+            MetadataOptions::default(),
+        )
         .unwrap();
     for t in probed.tracks() {
         match t.codec_params {

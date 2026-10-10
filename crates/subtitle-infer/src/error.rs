@@ -45,7 +45,10 @@ impl InferError {
     /// failure. `BackendUnavailable` and `Oom` both qualify; anything else
     /// (bad model file, invalid argument, runtime bug) fails immediately.
     pub fn is_gpu_init_failure(&self) -> bool {
-        matches!(self, InferError::Oom { .. } | InferError::BackendUnavailable { .. })
+        matches!(
+            self,
+            InferError::Oom { .. } | InferError::BackendUnavailable { .. }
+        )
     }
 }
 
@@ -55,7 +58,10 @@ mod tests {
 
     #[test]
     fn gpu_init_failures_are_retryable() {
-        let oom = InferError::Oom { backend: "cuda".into(), reason: "alloc 2 GiB failed".into() };
+        let oom = InferError::Oom {
+            backend: "cuda".into(),
+            reason: "alloc 2 GiB failed".into(),
+        };
         let unavailable = InferError::BackendUnavailable {
             backend: "vulkan".into(),
             reason: "no device with compute queue".into(),

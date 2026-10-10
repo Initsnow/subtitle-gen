@@ -15,7 +15,7 @@ use subtitle_core::types::TimedToken;
 use crate::backend;
 use crate::device::{DevicePlan, GpuBackend};
 use crate::error::Result;
-use crate::model::{DEFAULT_ALIGNER_GGUF, DEFAULT_QUANT, resolve_model_path};
+use crate::model::{resolve_model_path, DEFAULT_ALIGNER_GGUF, DEFAULT_QUANT};
 use crate::session::LoadOptions;
 
 /// A resolved Qwen3-ForcedAligner "session".
@@ -42,7 +42,11 @@ impl AlignerSession {
             n_gpu_layers = plan.n_gpu_layers,
             "aligner model resolved"
         );
-        Ok(Self { model_path, plan, n_threads: load.effective_threads() })
+        Ok(Self {
+            model_path,
+            plan,
+            n_threads: load.effective_threads(),
+        })
     }
 
     /// Resolve with the registry default spec.
@@ -73,8 +77,7 @@ impl AlignerSession {
     ) -> Result<Vec<TimedToken>> {
         // The FFI takes no language hint; the aligner infers it from the
         // transcript (same as the Python binding).
-        let words =
-            backend::align_words(&self.model_path, transcript, samples, self.n_threads, 0)?;
+        let words = backend::align_words(&self.model_path, transcript, samples, self.n_threads, 0)?;
         Ok(words
             .into_iter()
             .filter(|(text, _, _)| !text.is_empty())

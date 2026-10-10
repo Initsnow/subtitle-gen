@@ -139,24 +139,25 @@ impl AudioBuffer {
             resample_mono(&samples, sample_rate, target_rate)?
         };
 
-        Ok(Self { samples, sample_rate: target_rate })
+        Ok(Self {
+            samples,
+            sample_rate: target_rate,
+        })
     }
 
     /// Try decoding and resampling using system `ffmpeg` if available.
     fn load_via_ffmpeg(path: &Path, target_rate: u32) -> Option<Self> {
         let output = std::process::Command::new("ffmpeg")
-            .args([
-                "-hide_banner",
-                "-loglevel", "error",
-                "-y",
-                "-i",
-            ])
+            .args(["-hide_banner", "-loglevel", "error", "-y", "-i"])
             .arg(path)
             .args([
                 "-vn",
-                "-ac", "1",
-                "-ar", &target_rate.to_string(),
-                "-f", "f32le",
+                "-ac",
+                "1",
+                "-ar",
+                &target_rate.to_string(),
+                "-f",
+                "f32le",
                 "pipe:1",
             ])
             .output()
@@ -185,7 +186,10 @@ impl AudioBuffer {
 
     /// Wrap already-decoded mono samples.
     pub fn from_samples(samples: Vec<f32>, sample_rate: u32) -> Self {
-        Self { samples, sample_rate }
+        Self {
+            samples,
+            sample_rate,
+        }
     }
 
     pub fn samples(&self) -> &[f32] {

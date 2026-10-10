@@ -15,8 +15,9 @@ use crate::error::Result;
 use crate::types::{round_half_even, SubtitleItem};
 
 /// Punctuation stripped from line ends when `strip_punctuation` is set.
-pub const STRIP_PUNCTUATION_CHARS: &[char] =
-    &[',', '.', ';', ':', '!', '?', '，', '。', '；', '：', '！', '？', '、'];
+pub const STRIP_PUNCTUATION_CHARS: &[char] = &[
+    ',', '.', ';', ':', '!', '?', '，', '。', '；', '：', '！', '？', '、',
+];
 
 /// Which text variant of a [`SubtitleItem`] a renderer emits.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -170,12 +171,19 @@ fn round3(value: f64) -> f64 {
 
 pub fn render_json(items: &[SubtitleItem], mode: SubtitleMode, strip: bool) -> String {
     let data: Vec<Value> = match mode {
-        SubtitleMode::Original => items.iter().map(|i| Value::Object(i.to_json_map())).collect(),
+        SubtitleMode::Original => items
+            .iter()
+            .map(|i| Value::Object(i.to_json_map()))
+            .collect(),
         SubtitleMode::Proofread => items
             .iter()
             .map(|i| {
                 let text = i.proofread.clone().unwrap_or_else(|| i.text.clone());
-                let text = if strip { strip_punctuation(&text) } else { text };
+                let text = if strip {
+                    strip_punctuation(&text)
+                } else {
+                    text
+                };
                 serde_json::json!({
                     "id": i.id,
                     "start": round3(i.start),
@@ -188,7 +196,11 @@ pub fn render_json(items: &[SubtitleItem], mode: SubtitleMode, strip: bool) -> S
             .iter()
             .map(|i| {
                 let text = i.translation.clone().unwrap_or_default();
-                let text = if strip { strip_punctuation(&text) } else { text };
+                let text = if strip {
+                    strip_punctuation(&text)
+                } else {
+                    text
+                };
                 serde_json::json!({
                     "id": i.id,
                     "start": round3(i.start),
@@ -216,14 +228,14 @@ pub fn render_json(items: &[SubtitleItem], mode: SubtitleMode, strip: bool) -> S
     format!("{}\n", serde_json::to_string_pretty(&data).unwrap())
 }
 
-pub fn render_lrc(
-    items: &[SubtitleItem],
-    metadata: Option<&[String]>,
-    strip: bool,
-) -> String {
+pub fn render_lrc(items: &[SubtitleItem], metadata: Option<&[String]>, strip: bool) -> String {
     let mut lines: Vec<String> = metadata.map(|m| m.to_vec()).unwrap_or_default();
     for item in items {
-        let text = if strip { strip_punctuation(&item.text) } else { item.text.clone() };
+        let text = if strip {
+            strip_punctuation(&item.text)
+        } else {
+            item.text.clone()
+        };
         lines.push(format!("{}{}", format_lrc_timestamp(item.start), text));
     }
     format!("{}\n", lines.join("\n"))
@@ -402,9 +414,10 @@ impl SrtRegexes {
 }
 
 fn parse_srt_timestamp(regexes: &SrtRegexes, ts: &str) -> std::result::Result<f64, FormatError> {
-    let caps = regexes.timestamp.captures(ts).ok_or_else(|| {
-        FormatError(format!("Invalid SRT timestamp: {ts}"))
-    })?;
+    let caps = regexes
+        .timestamp
+        .captures(ts)
+        .ok_or_else(|| FormatError(format!("Invalid SRT timestamp: {ts}")))?;
     let hours: f64 = caps[1].parse().unwrap();
     let minutes: f64 = caps[2].parse().unwrap();
     let secs: f64 = caps[3].parse().unwrap();
@@ -412,7 +425,10 @@ fn parse_srt_timestamp(regexes: &SrtRegexes, ts: &str) -> std::result::Result<f6
     Ok(hours * 3600.0 + minutes * 60.0 + secs + millis / 1000.0)
 }
 
-fn parse_srt_timing_line(regexes: &SrtRegexes, line: &str) -> std::result::Result<(f64, f64), FormatError> {
+fn parse_srt_timing_line(
+    regexes: &SrtRegexes,
+    line: &str,
+) -> std::result::Result<(f64, f64), FormatError> {
     let parts: Vec<&str> = line.split("-->").collect();
     if parts.len() != 2 {
         return Err(FormatError(format!("Invalid SRT timing line: {line}")));
@@ -563,8 +579,9 @@ mod tests {
 
     #[test]
     fn render_srt_bilingual() {
-        let items = vec![SubtitleItem::new(1, 0.0, 1.2, "Hello")
-            .with_translation(Some("你好".to_string()))];
+        let items = vec![
+            SubtitleItem::new(1, 0.0, 1.2, "Hello").with_translation(Some("你好".to_string()))
+        ];
 
         let content = render_srt(&items, SubtitleMode::Bilingual, false);
 
@@ -596,8 +613,9 @@ mod tests {
 
     #[test]
     fn render_txt_bilingual_collapses_cue_line_breaks() {
-        let items = vec![SubtitleItem::new(1, 0.0, 1.2, "Hello!")
-            .with_translation(Some("你好。".to_string()))];
+        let items =
+            vec![SubtitleItem::new(1, 0.0, 1.2, "Hello!")
+                .with_translation(Some("你好。".to_string()))];
 
         let content = render_txt(&items, SubtitleMode::Bilingual, true);
 
@@ -606,8 +624,9 @@ mod tests {
 
     #[test]
     fn render_json_includes_optional_translation() {
-        let items = vec![SubtitleItem::new(1, 0.0, 1.2, "Hello")
-            .with_translation(Some("你好".to_string()))];
+        let items = vec![
+            SubtitleItem::new(1, 0.0, 1.2, "Hello").with_translation(Some("你好".to_string()))
+        ];
 
         let data: Vec<serde_json::Value> =
             serde_json::from_str(&render_json(&items, SubtitleMode::Original, false)).unwrap();
@@ -701,7 +720,8 @@ mod tests {
 
     #[test]
     fn parse_srt_rejects_duplicate_ids() {
-        let content = "1\n00:00:01,000 --> 00:00:02,000\na\n\n1\n00:00:03,000 --> 00:00:04,000\nb\n";
+        let content =
+            "1\n00:00:01,000 --> 00:00:02,000\na\n\n1\n00:00:03,000 --> 00:00:04,000\nb\n";
 
         let err = parse_srt_str(content).unwrap_err();
 

@@ -266,7 +266,11 @@ impl StreamDisplay {
                     s.content.clone()
                 };
                 let clean = tail.replace(['\r', '\n'], " ");
-                let label = if s.label.is_empty() { default_label } else { &s.label };
+                let label = if s.label.is_empty() {
+                    default_label
+                } else {
+                    &s.label
+                };
                 spinner.set_message(format!(
                     "{} [{} toks, {:.1}s]: {}",
                     label, s.token_count, elapsed, clean
@@ -298,7 +302,9 @@ fn create_progress_reporter() -> ProgressReporter {
 
 async fn cmd_pipeline(args: PipelineArgs) -> Result<(), Box<dyn std::error::Error>> {
     if args.input.is_empty() {
-        eprintln!("subtitle-gen: error: at least one input file is required. Use --help for usage.");
+        eprintln!(
+            "subtitle-gen: error: at least one input file is required. Use --help for usage."
+        );
         std::process::exit(1);
     }
 
@@ -340,7 +346,12 @@ async fn cmd_pipeline(args: PipelineArgs) -> Result<(), Box<dyn std::error::Erro
 
     for (idx, input_path) in args.input.iter().enumerate() {
         if total_inputs > 1 {
-            progress(&format!("processing file {}/{}: {}", idx + 1, total_inputs, input_path.display()));
+            progress(&format!(
+                "processing file {}/{}: {}",
+                idx + 1,
+                total_inputs,
+                input_path.display()
+            ));
         }
 
         let options = PipelineOptions {
@@ -355,7 +366,8 @@ async fn cmd_pipeline(args: PipelineArgs) -> Result<(), Box<dyn std::error::Erro
         match pipeline.run(options).await {
             Ok(result) => {
                 progress("writing subtitle output");
-                let written = write_pipeline_outputs(&args, input_path, &result.subtitles, &config)?;
+                let written =
+                    write_pipeline_outputs(&args, input_path, &result.subtitles, &config)?;
                 spinner.suspend(|| {
                     for p in written {
                         println!("{}", p.display());
@@ -372,7 +384,11 @@ async fn cmd_pipeline(args: PipelineArgs) -> Result<(), Box<dyn std::error::Erro
     spinner.finish_and_clear();
 
     if !failures.is_empty() {
-        eprintln!("subtitle-gen: {}/{} input(s) failed", failures.len(), total_inputs);
+        eprintln!(
+            "subtitle-gen: {}/{} input(s) failed",
+            failures.len(),
+            total_inputs
+        );
         std::process::exit(1);
     }
 
@@ -480,7 +496,10 @@ fn write_pipeline_outputs(
 
 fn bilingual_out_path(path: &Path) -> PathBuf {
     let parent = path.parent().unwrap_or(Path::new(""));
-    let stem = path.file_stem().and_then(|s| s.to_str()).unwrap_or("subtitles");
+    let stem = path
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or("subtitles");
     let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("srt");
     parent.join(format!("{stem}.bilingual.{ext}"))
 }
@@ -529,15 +548,28 @@ async fn cmd_align(args: AlignArgs) -> Result<(), Box<dyn std::error::Error>> {
         .await?;
 
     let out_path = args.out.unwrap_or_else(|| {
-        let ext = args.text.extension().and_then(|e| e.to_str()).unwrap_or("srt");
+        let ext = args
+            .text
+            .extension()
+            .and_then(|e| e.to_str())
+            .unwrap_or("srt");
         args.audio.with_extension(ext)
     });
 
-    let ext = out_path.extension().and_then(|e| e.to_str()).unwrap_or("").to_ascii_lowercase();
+    let ext = out_path
+        .extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or("")
+        .to_ascii_lowercase();
     if ext == "lrc" {
         write_lrc(&out_path, &items, Some(&metadata), args.strip_punctuation)?;
     } else {
-        write_subtitles(&out_path, &items, SubtitleMode::Original, args.strip_punctuation)?;
+        write_subtitles(
+            &out_path,
+            &items,
+            SubtitleMode::Original,
+            args.strip_punctuation,
+        )?;
     }
 
     spinner.finish_and_clear();
@@ -567,11 +599,20 @@ async fn cmd_proofread(args: ProofreadArgs) -> Result<(), Box<dyn std::error::Er
         .await?;
 
     let out_path = args.out.unwrap_or_else(|| {
-        let stem = args.input.file_stem().and_then(|s| s.to_str()).unwrap_or("subtitles");
+        let stem = args
+            .input
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or("subtitles");
         args.input.with_file_name(format!("{stem}.proofread.srt"))
     });
 
-    write_subtitles(&out_path, &proofread_items, SubtitleMode::Proofread, config.output.strip_punctuation)?;
+    write_subtitles(
+        &out_path,
+        &proofread_items,
+        SubtitleMode::Proofread,
+        config.output.strip_punctuation,
+    )?;
     spinner.finish_and_clear();
     println!("{}", out_path.display());
     Ok(())
@@ -591,7 +632,11 @@ async fn cmd_translate(args: TranslateArgs) -> Result<(), Box<dyn std::error::Er
 
     let (spinner, progress) = create_progress_reporter();
     let stream_display = StreamDisplay::new(spinner.clone());
-    progress(&format!("translating {} cues to {} with LLM", items.len(), args.target));
+    progress(&format!(
+        "translating {} cues to {} with LLM",
+        items.len(),
+        args.target
+    ));
 
     let llm = SubtitleLlm::new(config.llm.clone());
     let translated_items = llm
@@ -604,14 +649,29 @@ async fn cmd_translate(args: TranslateArgs) -> Result<(), Box<dyn std::error::Er
 
     let target_suffix = args.target.to_ascii_lowercase().replace(' ', "-");
     let out_path = args.out.unwrap_or_else(|| {
-        let stem = args.input.file_stem().and_then(|s| s.to_str()).unwrap_or("subtitles");
-        args.input.with_file_name(format!("{stem}.{target_suffix}.srt"))
+        let stem = args
+            .input
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or("subtitles");
+        args.input
+            .with_file_name(format!("{stem}.{target_suffix}.srt"))
     });
 
-    write_subtitles(&out_path, &translated_items, SubtitleMode::Translation, config.output.strip_punctuation)?;
+    write_subtitles(
+        &out_path,
+        &translated_items,
+        SubtitleMode::Translation,
+        config.output.strip_punctuation,
+    )?;
     if args.bilingual {
         let bi_path = bilingual_out_path(&out_path);
-        write_subtitles(&bi_path, &translated_items, SubtitleMode::Bilingual, config.output.strip_punctuation)?;
+        write_subtitles(
+            &bi_path,
+            &translated_items,
+            SubtitleMode::Bilingual,
+            config.output.strip_punctuation,
+        )?;
         println!("{}", bi_path.display());
     }
 

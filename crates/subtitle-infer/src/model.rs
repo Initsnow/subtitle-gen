@@ -34,13 +34,41 @@ pub const DEFAULT_QUANT: &str = "q4_k";
 /// resolve download URLs; the filenames/repos below pin the same registry
 /// entries so both resolve to the same cache files.
 const ALIASES: &[(&str, &str, &str)] = &[
-    ("qwen3", "qwen3-asr-0.6b-q4_k.gguf", "cstr/qwen3-asr-0.6b-GGUF"),
-    ("qwen3-asr", "qwen3-asr-0.6b-q4_k.gguf", "cstr/qwen3-asr-0.6b-GGUF"),
-    ("qwen3-asr-0.6b", "qwen3-asr-0.6b-q4_k.gguf", "cstr/qwen3-asr-0.6b-GGUF"),
-    ("qwen3-asr-0.6b-q4_k", "qwen3-asr-0.6b-q4_k.gguf", "cstr/qwen3-asr-0.6b-GGUF"),
-    ("qwen3-asr-0.6b-q8_0", "qwen3-asr-0.6b-q8_0.gguf", "cstr/qwen3-asr-0.6b-GGUF"),
-    ("qwen3-1.7b", "qwen3-asr-1.7b-q4_k.gguf", "cstr/qwen3-asr-1.7b-GGUF"),
-    ("qwen3-asr-1.7b", "qwen3-asr-1.7b-q4_k.gguf", "cstr/qwen3-asr-1.7b-GGUF"),
+    (
+        "qwen3",
+        "qwen3-asr-0.6b-q4_k.gguf",
+        "cstr/qwen3-asr-0.6b-GGUF",
+    ),
+    (
+        "qwen3-asr",
+        "qwen3-asr-0.6b-q4_k.gguf",
+        "cstr/qwen3-asr-0.6b-GGUF",
+    ),
+    (
+        "qwen3-asr-0.6b",
+        "qwen3-asr-0.6b-q4_k.gguf",
+        "cstr/qwen3-asr-0.6b-GGUF",
+    ),
+    (
+        "qwen3-asr-0.6b-q4_k",
+        "qwen3-asr-0.6b-q4_k.gguf",
+        "cstr/qwen3-asr-0.6b-GGUF",
+    ),
+    (
+        "qwen3-asr-0.6b-q8_0",
+        "qwen3-asr-0.6b-q8_0.gguf",
+        "cstr/qwen3-asr-0.6b-GGUF",
+    ),
+    (
+        "qwen3-1.7b",
+        "qwen3-asr-1.7b-q4_k.gguf",
+        "cstr/qwen3-asr-1.7b-GGUF",
+    ),
+    (
+        "qwen3-asr-1.7b",
+        "qwen3-asr-1.7b-q4_k.gguf",
+        "cstr/qwen3-asr-1.7b-GGUF",
+    ),
     (
         "qwen3-forced-aligner",
         "qwen3-forced-aligner-0.6b-q4_k.gguf",
@@ -62,7 +90,11 @@ const ALIASES: &[(&str, &str, &str)] = &[
         "cstr/qwen3-forced-aligner-0.6b-GGUF",
     ),
     ("firered-vad", "firered-vad.gguf", "cstr/firered-vad-GGUF"),
-    ("cstr/firered-vad-gguf", "firered-vad.gguf", "cstr/firered-vad-GGUF"),
+    (
+        "cstr/firered-vad-gguf",
+        "firered-vad.gguf",
+        "cstr/firered-vad-GGUF",
+    ),
 ];
 
 /// Full language names → ISO 639-1, for the runtime `language` hint.
@@ -132,11 +164,17 @@ pub fn canonical_name(spec: &str) -> String {
             Some(idx) => name[idx + "huggingface.co/".len()..].to_string(),
             None => name.clone(),
         };
-        let parts: Vec<&str> =
-            rest.split('/').filter(|p: &&str| !p.is_empty() && *p != "resolve" && *p != "main").collect();
+        let parts: Vec<&str> = rest
+            .split('/')
+            .filter(|p: &&str| !p.is_empty() && *p != "resolve" && *p != "main")
+            .collect();
         // Keep "<owner>/<repo>"; an explicit file inside the URL is handled
         // by the HF downloader in a later phase (same rule as Python).
-        name = if parts.len() >= 2 { parts[..2].join("/") } else { parts.join("/") };
+        name = if parts.len() >= 2 {
+            parts[..2].join("/")
+        } else {
+            parts.join("/")
+        };
     }
 
     // "owner/repo:file.gguf" → keep the file part for exact cache lookup.
@@ -220,7 +258,11 @@ fn spec_to_filename_and_repo(spec: &str, quant: &str) -> Option<(String, String)
             .split('/')
             .filter(|p: &&str| !p.is_empty() && *p != "resolve" && *p != "main")
             .collect();
-        spec = if parts.len() >= 2 { parts[..2].join("/") } else { parts.join("/") };
+        spec = if parts.len() >= 2 {
+            parts[..2].join("/")
+        } else {
+            parts.join("/")
+        };
     }
 
     // Explicit "repo:file.gguf".
@@ -291,7 +333,10 @@ mod tests {
     fn aliases_resolve_to_registry_filenames() {
         assert_eq!(canonical_name("qwen3"), "qwen3-asr-0.6b-q4_k.gguf");
         assert_eq!(canonical_name("QWEN3-ASR-0.6B"), "qwen3-asr-0.6b-q4_k.gguf");
-        assert_eq!(canonical_name("qwen3-fa"), "qwen3-forced-aligner-0.6b-q4_k.gguf");
+        assert_eq!(
+            canonical_name("qwen3-fa"),
+            "qwen3-forced-aligner-0.6b-q4_k.gguf"
+        );
         assert_eq!(canonical_name("cstr/firered-vad-GGUF"), "firered-vad.gguf");
     }
 
@@ -354,7 +399,10 @@ mod tests {
             resolve_model_path("not a model", "q4_k"),
             Err(InferError::Spec(_))
         ));
-        assert!(matches!(resolve_model_path("   ", "q4_k"), Err(InferError::Spec(_))));
+        assert!(matches!(
+            resolve_model_path("   ", "q4_k"),
+            Err(InferError::Spec(_))
+        ));
     }
 
     #[test]

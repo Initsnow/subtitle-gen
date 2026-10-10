@@ -7,7 +7,9 @@ use subtitle_core::formats::{write_lrc, write_subtitles, SubtitleMode};
 use subtitle_core::types::SubtitleItem;
 
 fn main() {
-    let out_dir = std::env::args().nth(1).expect("usage: render_demo <outdir>");
+    let out_dir = std::env::args()
+        .nth(1)
+        .expect("usage: render_demo <outdir>");
     std::fs::create_dir_all(&out_dir).expect("create outdir");
 
     let items = vec![

@@ -93,7 +93,9 @@ impl CpuInfo {
 
 /// Probe the local CPU. Cheap and side-effect free.
 pub fn probe_cpu() -> CpuInfo {
-    let logical_cores = std::thread::available_parallelism().map(|n| n.get()).unwrap_or(1);
+    let logical_cores = std::thread::available_parallelism()
+        .map(|n| n.get())
+        .unwrap_or(1);
     CpuInfo {
         logical_cores,
         avx2: is_x86_feature_detected!("avx2"),
@@ -150,8 +152,11 @@ impl DevicePlan {
 /// CPU. The CPU backend is always last and always present.
 pub fn build_ladder(candidates: &[GpuBackend]) -> Vec<GpuBackend> {
     let order = [GpuBackend::Cuda, GpuBackend::Vulkan, GpuBackend::Metal];
-    let mut ladder: Vec<GpuBackend> =
-        order.iter().filter(|b| candidates.contains(b)).copied().collect();
+    let mut ladder: Vec<GpuBackend> = order
+        .iter()
+        .filter(|b| candidates.contains(b))
+        .copied()
+        .collect();
     ladder.push(GpuBackend::Cpu);
     ladder
 }
@@ -170,15 +175,19 @@ impl FallbackSelector {
     /// repeat the same attempt), followed by the CPU rung.
     pub fn detect() -> Self {
         let gpu = GpuBackend::first_compiled();
-        let ladder: Vec<GpuBackend> =
-            gpu.into_iter().chain(std::iter::once(GpuBackend::Cpu)).collect();
+        let ladder: Vec<GpuBackend> = gpu
+            .into_iter()
+            .chain(std::iter::once(GpuBackend::Cpu))
+            .collect();
         Self { ladder }
     }
 
     /// Ladder from an explicit candidate list (used by tests and by callers
     /// that already know their backend situation).
     pub fn from_candidates(candidates: Vec<GpuBackend>) -> Self {
-        Self { ladder: build_ladder(&candidates) }
+        Self {
+            ladder: build_ladder(&candidates),
+        }
     }
 
     pub fn ladder(&self) -> &[GpuBackend] {
@@ -273,7 +282,10 @@ mod tests {
     use crate::error::InferError;
 
     fn oom(backend: GpuBackend) -> InferError {
-        InferError::Oom { backend: backend.as_str().into(), reason: "alloc failed".into() }
+        InferError::Oom {
+            backend: backend.as_str().into(),
+            reason: "alloc failed".into(),
+        }
     }
 
     #[test]
@@ -286,7 +298,12 @@ mod tests {
         ]);
         assert_eq!(
             ladder,
-            vec![GpuBackend::Cuda, GpuBackend::Vulkan, GpuBackend::Metal, GpuBackend::Cpu]
+            vec![
+                GpuBackend::Cuda,
+                GpuBackend::Vulkan,
+                GpuBackend::Metal,
+                GpuBackend::Cpu
+            ]
         );
     }
 
@@ -356,7 +373,10 @@ mod tests {
         let selector = FallbackSelector::from_candidates(vec![]);
         let err = selector
             .select(|_backend, _layers| -> Result<String, InferError> {
-                Err(InferError::Runtime { code: -1, message: "boom".into() })
+                Err(InferError::Runtime {
+                    code: -1,
+                    message: "boom".into(),
+                })
             })
             .unwrap_err();
         assert!(matches!(err, InferError::Runtime { .. }));
