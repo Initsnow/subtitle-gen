@@ -41,8 +41,12 @@ jobs:
           Invoke-WebRequest -Uri $crispasrUrl -OutFile $downloadPath
           New-Item -ItemType Directory -Force -Path $extractDir | Out-Null
           tar -xzf $downloadPath -C $extractDir
-          $libDir = (Get-ChildItem -Path $extractDir -Recurse -Directory -Filter "lib" | Select-Object -First 1).FullName
+          $libFile = Get-ChildItem -Path $extractDir -Recurse -File -Filter "crispasr.lib" | Select-Object -First 1
+          $libDir = $libFile.DirectoryName
+          $sysDir = (Get-ChildItem -Path $extractDir -Directory | Select-Object -First 1).FullName
           echo "CRISPASR_LIB_DIR=$libDir" >> $env:GITHUB_ENV
+          echo "CRISPASR_SYS_LIB_DIR=$sysDir" >> $env:GITHUB_ENV
+          echo "CRISPASR_EXTRACT_DIR=$extractDir" >> $env:GITHUB_ENV
 
       - name: Download CrispASR native library (Linux CUDA)
         if: runner.os == 'Linux'
@@ -61,6 +65,7 @@ jobs:
         run: cargo build --release --target ${{ matrix.target }} -p subtitle-cli
         env:
           CRISPASR_LIB_DIR: ${{ env.CRISPASR_LIB_DIR }}
+          CRISPASR_SYS_LIB_DIR: ${{ env.CRISPASR_SYS_LIB_DIR }}
 
       - name: Package release artifact (Windows)
         if: runner.os == 'Windows'
@@ -69,8 +74,10 @@ jobs:
           $stage = "$env:RUNNER_TEMP\stage"
           New-Item -ItemType Directory -Force -Path $stage | Out-Null
           Copy-Item "target/${{ matrix.target }}/release/${{ matrix.bin_name }}" $stage
-          if (Test-Path "$env:CRISPASR_LIB_DIR") {
-            Copy-Item "$env:CRISPASR_LIB_DIR\*.dll" $stage -ErrorAction SilentlyContinue
+          if (Test-Path "$env:CRISPASR_EXTRACT_DIR") {
+            Get-ChildItem -Path "$env:CRISPASR_EXTRACT_DIR" -Recurse -Filter "*.dll" | ForEach-Object {
+              Copy-Item $_.FullName $stage -Force
+            }
           }
           Copy-Item "README.md" $stage
           Copy-Item "LICENSE" $stage

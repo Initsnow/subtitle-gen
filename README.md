@@ -9,7 +9,7 @@
 ## 核心特性
 
 - **纯 Rust 核心与单二进制交付**：无 Python、PyTorch 或外部 FFmpeg 进程依赖；内置 `symphonia` 解码多媒体容器（MP4、MKV、WebM、MP3、FLAC、WAV 等）与 `rubato` SIMD 16 kHz 重采样。
-- **GGUF 全链路与硬件自适应**：原生集成 GGUF 模型，首选 CUDA 12 GPU 加速，在无独立显卡或驱动缺失时平滑自动降级至 Vulkan / Metal / CPU AVX2，杜绝崩溃。
+- **GGUF 全链路与硬件自适应**：原生集成 GGUF 模型，首选 NVIDIA CUDA 12 GPU 加速；在无独立显卡、驱动缺失或显存不足时平滑自动降级至 CPU（AVX2 / AVX-512），杜绝崩溃（源码编译支持根据 target 特性配置 Vulkan 或 macOS Metal）。
 - **本地智能分行与声学停顿吸附**：彻底告别昂贵且缓慢的 LLM 断句。集成 `lindera` 形态素词性标注（助词/连词/用言连用形），结合词间声学物理静音停顿（$\ge 150\text{ms}$）进行动态规划排版分句。
 - **歌词/文本全局对齐（Needleman-Wunsch）**：提供精确二次 DP 与针对长篇文本的带状走廊 DP（Banded Corridor DP），支持片假名/平假名折叠匹配与单调时间戳平滑插值。
 - **安全与可控缓存**：默认不产生磁盘缓存（纯内存流式处理）；可通过 `--cache` 按需开启基于 SHA-256 的持久化增量断点恢复与 LRU 自动清理。
