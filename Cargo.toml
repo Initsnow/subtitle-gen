@@ -47,6 +47,7 @@ sha2 = "0.10"
 toml = "0.8"
 futures-util = "0.3"
 dirs = "6"
+console = "0.15"
 
 [profile.dev.package."*"]
 opt-level = 3

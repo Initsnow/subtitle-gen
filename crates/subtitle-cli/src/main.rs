@@ -5,6 +5,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use clap::{Args, Parser, Subcommand};
+use console::{style, Term};
 use indicatif::{ProgressBar, ProgressStyle};
 use tracing_subscriber::EnvFilter;
 
@@ -213,7 +214,45 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 }
 
-#[derive(Clone)]
+fn wrap_lines(text: &str, max_width: usize, max_lines: usize) -> Vec<String> {
+    if text.is_empty() {
+        return vec![String::new()];
+    }
+
+    let mut lines = Vec::new();
+    let mut current_line = String::new();
+    let mut current_width = 0;
+
+    for ch in text.chars() {
+        if ch == '\r' {
+            continue;
+        }
+        if ch == '\n' {
+            lines.push(current_line);
+            current_line = String::new();
+            current_width = 0;
+            continue;
+        }
+        let ch_width = console::measure_text_width(&ch.to_string());
+        if current_width + ch_width > max_width && !current_line.is_empty() {
+            lines.push(current_line);
+            current_line = String::new();
+            current_width = 0;
+        }
+        current_line.push(ch);
+        current_width += ch_width;
+    }
+    if !current_line.is_empty() || lines.is_empty() {
+        lines.push(current_line);
+    }
+
+    if lines.len() > max_lines {
+        lines.split_off(lines.len() - max_lines)
+    } else {
+        lines
+    }
+}
+
 pub struct StreamDisplay {
     spinner: ProgressBar,
     state: Arc<std::sync::Mutex<StreamState>>,
@@ -224,7 +263,9 @@ struct StreamState {
     content: String,
     token_count: usize,
     start_time: std::time::Instant,
-    last_token_time: std::time::Instant,
+    last_render_time: std::time::Instant,
+    rendered_lines: usize,
+    active: bool,
 }
 
 impl StreamDisplay {
@@ -237,50 +278,178 @@ impl StreamDisplay {
                 content: String::new(),
                 token_count: 0,
                 start_time: now,
-                last_token_time: now,
+                last_render_time: now,
+                rendered_lines: 0,
+                active: false,
             })),
         }
     }
 
-    pub fn callback(&self, default_label: &'static str) -> StreamCallback {
-        let spinner = self.spinner.clone();
-        let state = Arc::clone(&self.state);
+    pub fn start_batch(&self, label: &str) {
+        if let Ok(mut s) = self.state.lock() {
+            let term = Term::stderr();
+            if s.active && s.rendered_lines > 0 {
+                s.render(&term);
+                s.rendered_lines = 0;
+            }
+
+            self.spinner.disable_steady_tick();
+            self.spinner.finish_and_clear();
+
+            s.label = label.to_string();
+            s.content.clear();
+            s.token_count = 0;
+            s.start_time = std::time::Instant::now();
+            s.last_render_time = s.start_time;
+            s.rendered_lines = 0;
+            s.active = true;
+            s.render(&term);
+        }
+    }
+
+    pub fn finish(&self) {
+        if let Ok(mut s) = self.state.lock() {
+            if s.active {
+                let term = Term::stderr();
+                s.render(&term);
+                s.rendered_lines = 0;
+                s.active = false;
+            }
+        }
+        self.spinner.reset();
+        self.spinner
+            .enable_steady_tick(std::time::Duration::from_millis(100));
+    }
+
+    pub fn callback(self: &Arc<Self>, default_label: &'static str) -> StreamCallback {
+        let display = Arc::clone(self);
+        let default_label = default_label.to_string();
         Arc::new(move |token: &str| {
-            if let Ok(mut s) = state.lock() {
-                let now = std::time::Instant::now();
-                if now.duration_since(s.last_token_time) > std::time::Duration::from_secs(10) {
+            if let Ok(mut s) = display.state.lock() {
+                if !s.active {
+                    display.spinner.disable_steady_tick();
+                    display.spinner.finish_and_clear();
+                    s.label = default_label.clone();
                     s.content.clear();
                     s.token_count = 0;
-                    s.start_time = now;
+                    s.start_time = std::time::Instant::now();
+                    s.last_render_time = s.start_time;
+                    s.rendered_lines = 0;
+                    s.active = true;
                 }
-                s.last_token_time = now;
+
                 s.content.push_str(token);
                 s.token_count += 1;
 
-                let elapsed = s.start_time.elapsed().as_secs_f32();
-                let char_count = s.content.chars().count();
-                let tail = if char_count > 60 {
-                    let snippet: String = s.content.chars().skip(char_count - 57).collect();
-                    format!("...{snippet}")
-                } else {
-                    s.content.clone()
-                };
-                let clean = tail.replace(['\r', '\n'], " ");
-                let label = if s.label.is_empty() {
-                    default_label
-                } else {
-                    &s.label
-                };
-                spinner.set_message(format!(
-                    "{} [{} toks, {:.1}s]: {}",
-                    label, s.token_count, elapsed, clean
-                ));
+                let now = std::time::Instant::now();
+                if now.duration_since(s.last_render_time) >= std::time::Duration::from_millis(40) {
+                    let term = Term::stderr();
+                    s.render(&term);
+                    s.last_render_time = now;
+                }
             }
         })
     }
 }
 
-type ProgressReporter = (ProgressBar, Arc<dyn Fn(&str) + Send + Sync>);
+impl StreamState {
+    fn render(&mut self, term: &Term) {
+        if !term.is_term() {
+            return;
+        }
+
+        let (_, cols) = term.size();
+        let width = (cols as usize).clamp(40, 100);
+        let inner_width = width.saturating_sub(4);
+
+        let display_text = if self.content.chars().count() > 800 {
+            let count = self.content.chars().count();
+            let tail: String = self
+                .content
+                .chars()
+                .skip(count.saturating_sub(799))
+                .collect();
+            format!("…{tail}")
+        } else {
+            self.content.clone()
+        };
+
+        let content_lines = wrap_lines(&display_text, inner_width, 5);
+        let mut out = Vec::with_capacity(content_lines.len() + 2);
+
+        // Top border
+        let title = if self.label.is_empty() {
+            " LLM ".to_string()
+        } else {
+            format!(" LLM · {} ", self.label)
+        };
+        let max_title_w = width.saturating_sub(6);
+        let title = if console::measure_text_width(&title) > max_title_w {
+            console::truncate_str(&title, max_title_w, "…").to_string()
+        } else {
+            title
+        };
+        let title_w = console::measure_text_width(&title);
+        let dashes = width.saturating_sub(title_w + 3);
+        out.push(format!(
+            "{}{}{}{}",
+            style("╭─").cyan(),
+            style(&title).cyan().bold(),
+            style("─".repeat(dashes)).cyan(),
+            style("╮").cyan()
+        ));
+
+        // Content lines
+        for line in &content_lines {
+            let line_w = console::measure_text_width(line);
+            let pad = inner_width.saturating_sub(line_w);
+            out.push(format!(
+                "{} {}{}{}",
+                style("│").cyan(),
+                line,
+                " ".repeat(pad),
+                style(" │").cyan()
+            ));
+        }
+
+        // Bottom border
+        let elapsed = self.start_time.elapsed().as_secs_f32();
+        let footer = if self.token_count == 0 {
+            " waiting for response... ".to_string()
+        } else {
+            format!(" {} tokens · {:.1}s ", self.token_count, elapsed)
+        };
+        let max_footer_w = width.saturating_sub(6);
+        let footer = if console::measure_text_width(&footer) > max_footer_w {
+            console::truncate_str(&footer, max_footer_w, "…").to_string()
+        } else {
+            footer
+        };
+        let footer_w = console::measure_text_width(&footer);
+        let dashes = width.saturating_sub(footer_w + 3);
+        out.push(format!(
+            "{}{}{}{}",
+            style("╰─").cyan(),
+            style(&footer).dim(),
+            style("─".repeat(dashes)).cyan(),
+            style("╯").cyan()
+        ));
+
+        if self.rendered_lines > 0 {
+            let _ = term.clear_last_lines(self.rendered_lines);
+        }
+        for line in &out {
+            let _ = term.write_line(line);
+        }
+        self.rendered_lines = out.len();
+    }
+}
+
+type ProgressReporter = (
+    ProgressBar,
+    Arc<dyn Fn(&str) + Send + Sync>,
+    Arc<StreamDisplay>,
+);
 
 fn create_progress_reporter() -> ProgressReporter {
     let spinner = ProgressBar::new_spinner();
@@ -292,16 +461,18 @@ fn create_progress_reporter() -> ProgressReporter {
     );
     spinner.enable_steady_tick(std::time::Duration::from_millis(100));
 
+    let stream_display = Arc::new(StreamDisplay::new(spinner.clone()));
     let sp = spinner.clone();
+    let sd = Arc::clone(&stream_display);
     let cb = Arc::new(move |msg: &str| {
-        if let Some(preview) = msg.strip_prefix("preview: ") {
-            sp.println(preview);
+        if msg.starts_with("proofreading batch ") || msg.starts_with("translating batch ") {
+            sd.start_batch(msg);
         } else {
             sp.set_message(msg.to_string());
         }
     });
 
-    (spinner, cb)
+    (spinner, cb, stream_display)
 }
 
 async fn cmd_pipeline(args: PipelineArgs) -> Result<(), Box<dyn std::error::Error>> {
@@ -343,8 +514,7 @@ async fn cmd_pipeline(args: PipelineArgs) -> Result<(), Box<dyn std::error::Erro
         }
     }
 
-    let (spinner, progress) = create_progress_reporter();
-    let stream_display = StreamDisplay::new(spinner.clone());
+    let (spinner, progress, stream_display) = create_progress_reporter();
 
     // Initialize inference engine: only load forced aligner if segmentation needs it
     progress("loading inference models");
@@ -399,6 +569,7 @@ async fn cmd_pipeline(args: PipelineArgs) -> Result<(), Box<dyn std::error::Erro
 
         match pipeline.run(options).await {
             Ok(result) => {
+                stream_display.finish();
                 progress("writing subtitle output");
                 let written =
                     write_pipeline_outputs(&args, input_path, &result.subtitles, &config)?;
@@ -409,6 +580,7 @@ async fn cmd_pipeline(args: PipelineArgs) -> Result<(), Box<dyn std::error::Erro
                 });
             }
             Err(e) => {
+                stream_display.finish();
                 eprintln!("subtitle-gen: {}: {e}", input_path.display());
                 failures.push(input_path.clone());
             }
@@ -546,7 +718,7 @@ async fn cmd_align(args: AlignArgs) -> Result<(), Box<dyn std::error::Error>> {
     }
 
     let config = load_config(args.config.as_deref())?;
-    let (spinner, progress) = create_progress_reporter();
+    let (spinner, progress, _stream_display) = create_progress_reporter();
 
     progress("loading inference models");
     let load_opts = LoadOptions {
@@ -623,8 +795,7 @@ async fn cmd_proofread(args: ProofreadArgs) -> Result<(), Box<dyn std::error::Er
         std::process::exit(1);
     }
 
-    let (spinner, progress) = create_progress_reporter();
-    let stream_display = StreamDisplay::new(spinner.clone());
+    let (spinner, progress, stream_display) = create_progress_reporter();
     progress(&format!("proofreading {} cues with LLM", items.len()));
 
     let llm = SubtitleLlm::new(config.llm.clone());
@@ -635,6 +806,7 @@ async fn cmd_proofread(args: ProofreadArgs) -> Result<(), Box<dyn std::error::Er
             Some(Arc::clone(&progress)),
         )
         .await?;
+    stream_display.finish();
 
     let out_path = args.out.unwrap_or_else(|| {
         let stem = args
@@ -668,8 +840,7 @@ async fn cmd_translate(args: TranslateArgs) -> Result<(), Box<dyn std::error::Er
         std::process::exit(1);
     }
 
-    let (spinner, progress) = create_progress_reporter();
-    let stream_display = StreamDisplay::new(spinner.clone());
+    let (spinner, progress, stream_display) = create_progress_reporter();
     progress(&format!(
         "translating {} cues to {} with LLM",
         items.len(),
@@ -685,6 +856,7 @@ async fn cmd_translate(args: TranslateArgs) -> Result<(), Box<dyn std::error::Er
             Some(Arc::clone(&progress)),
         )
         .await?;
+    stream_display.finish();
 
     let target_suffix = args.target.to_ascii_lowercase().replace(' ', "-");
     let out_path = args.out.unwrap_or_else(|| {

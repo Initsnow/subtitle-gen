@@ -186,15 +186,6 @@ impl SubtitleLlm {
                     item.proofread = Some(corr.clone());
                 }
             }
-
-            if let Some(ref p) = progress {
-                p(&format!(
-                    "preview: [LLM proofread batch {}/{} done, {} correction(s)]",
-                    b_idx + 1,
-                    total_batches,
-                    corrections.len()
-                ));
-            }
         }
 
         Ok(result)
@@ -266,15 +257,6 @@ impl SubtitleLlm {
                 if let Some(trans) = translations.get(&item.id) {
                     item.translation = Some(trans.clone());
                 }
-            }
-
-            if let Some(ref p) = progress {
-                p(&format!(
-                    "preview: [LLM translate batch {}/{} done, {} cue(s)]",
-                    b_idx + 1,
-                    total_batches,
-                    chunk.len()
-                ));
             }
         }
 

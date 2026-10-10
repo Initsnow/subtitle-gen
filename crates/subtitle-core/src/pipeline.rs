@@ -252,18 +252,6 @@ impl<B: InferenceBackend + 'static> SubtitlePipeline<B> {
                     }
                 };
 
-                if !transcript.trim().is_empty() {
-                    report(
-                        &progress,
-                        &format!(
-                            "preview: [{:.1}s - {:.1}s] {}",
-                            window.start,
-                            window.end,
-                            transcript.trim()
-                        ),
-                    );
-                }
-
                 // 2. Alignment
                 let local_tokens = if with_alignment && !transcript.trim().is_empty() {
                     report(
@@ -549,15 +537,6 @@ impl<B: InferenceBackend + 'static> SubtitlePipeline<B> {
             }
 
             if !transcript.trim().is_empty() {
-                report(
-                    &progress,
-                    &format!(
-                        "preview: [{:.1}s - {:.1}s] {}",
-                        window.start,
-                        window.end,
-                        transcript.trim()
-                    ),
-                );
                 report(
                     &progress,
                     &format!("window {chunk_num}/{total_windows}: forced alignment"),
