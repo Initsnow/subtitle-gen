@@ -316,20 +316,50 @@ async fn cmd_pipeline(args: PipelineArgs) -> Result<(), Box<dyn std::error::Erro
     let mut config = load_config(args.config.as_deref())?;
     apply_pipeline_overrides(&mut config, &args);
 
+    // When only TXT output is requested (no timestamps required) and the user didn't explicitly
+    // specify a segment_mode, default to "none" so forced alignment can be skipped.
+    if args.segment_mode.is_none() {
+        let only_txt = if let Some(ref out_path) = args.out {
+            out_path
+                .extension()
+                .and_then(|s| s.to_str())
+                .map(|s| s.eq_ignore_ascii_case("txt"))
+                .unwrap_or(false)
+        } else if !args.formats.is_empty() {
+            args.formats.iter().all(|f| f.eq_ignore_ascii_case("txt"))
+        } else {
+            config
+                .output
+                .default_formats
+                .iter()
+                .all(|f| f.eq_ignore_ascii_case("txt"))
+        };
+        if only_txt {
+            config.segment.mode = "none".to_string();
+        }
+    }
+
     let (spinner, progress) = create_progress_reporter();
     let stream_display = StreamDisplay::new(spinner.clone());
 
-    // Initialize inference engine
+    // Initialize inference engine: only load forced aligner if segmentation needs it
     progress("loading inference models");
     let load_opts = LoadOptions {
         n_threads: config.model.n_threads as i32,
         ladder: None,
     };
 
+    let needs_aligner = config.segment.mode != "none";
+    let aligner_spec = if needs_aligner {
+        Some(config.model.aligner_model.as_str())
+    } else {
+        None
+    };
+
     let backend = match InferenceEngine::load(
         None,
         Some(&config.model.asr_model),
-        Some(&config.model.aligner_model),
+        aligner_spec,
         &load_opts,
     ) {
         Ok(engine) => Arc::new(engine),
@@ -357,7 +387,7 @@ async fn cmd_pipeline(args: PipelineArgs) -> Result<(), Box<dyn std::error::Erro
         let options = PipelineOptions {
             input_path: input_path.clone(),
             translate: args.translate.clone(),
-            segment_mode: args.segment_mode.clone(),
+            segment_mode: Some(config.segment.mode.clone()),
             overwrite_cache: args.overwrite_cache,
             progress: Some(Arc::clone(&progress)),
             stream_token: Some(stream_display.callback("LLM")),

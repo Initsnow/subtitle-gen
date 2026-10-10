@@ -13,7 +13,7 @@ use subtitle_core::types::TimedToken;
 
 use crate::aligner::AlignerSession;
 use crate::asr::AsrSession;
-use crate::model::{DEFAULT_ALIGNER_GGUF, DEFAULT_ASR_GGUF, DEFAULT_VAD_GGUF};
+use crate::model::{DEFAULT_ASR_GGUF, DEFAULT_VAD_GGUF};
 use crate::session::LoadOptions;
 use crate::vad::{VadOptions, VadSession};
 
@@ -42,7 +42,8 @@ pub struct InferenceEngine {
 }
 
 impl InferenceEngine {
-    /// Load VAD, ASR, and forced-aligner models on a dedicated inference worker thread.
+    /// Load VAD, ASR, and optional forced-aligner models on a dedicated inference worker thread.
+    /// When `aligner_spec` is `None`, the forced-aligner model is not loaded (saving memory/VRAM).
     pub fn load(
         vad_spec: Option<&str>,
         asr_spec: Option<&str>,
@@ -51,7 +52,7 @@ impl InferenceEngine {
     ) -> CoreResult<Self> {
         let vad_spec = vad_spec.unwrap_or(DEFAULT_VAD_GGUF).to_string();
         let asr_spec = asr_spec.unwrap_or(DEFAULT_ASR_GGUF).to_string();
-        let aligner_spec = aligner_spec.unwrap_or(DEFAULT_ALIGNER_GGUF).to_string();
+        let aligner_spec = aligner_spec.map(|s| s.to_string());
         let opts = load_opts.clone();
 
         let (cmd_tx, cmd_rx) = channel::<InferenceCommand>();
@@ -61,16 +62,28 @@ impl InferenceEngine {
             // Load sessions inside worker thread
             let vad_res = VadSession::load(&vad_spec, VadOptions::default(), &opts);
             let asr_res = AsrSession::load(&asr_spec, &opts);
-            let aligner_res = AlignerSession::load(&aligner_spec, &opts);
+            let aligner_res = aligner_spec
+                .as_ref()
+                .map(|spec| AlignerSession::load(spec, &opts));
 
             let (vad, asr, aligner) = match (vad_res, asr_res, aligner_res) {
-                (Ok(v), Ok(a), Ok(al)) => {
+                (Ok(v), Ok(a), Some(Ok(al))) => {
                     let _ = init_tx.send(Ok(()));
-                    (v, a, al)
+                    (v, a, Some(al))
                 }
-                (Err(e), _, _) | (_, Err(e), _) | (_, _, Err(e)) => {
+                (Ok(v), Ok(a), None) => {
+                    let _ = init_tx.send(Ok(()));
+                    (v, a, None)
+                }
+                (Err(e), _, _) | (_, Err(e), _) => {
                     let _ = init_tx.send(Err(CoreError::Pipeline(format!(
                         "Failed to load inference models: {e}"
+                    ))));
+                    return;
+                }
+                (_, _, Some(Err(e))) => {
+                    let _ = init_tx.send(Err(CoreError::Pipeline(format!(
+                        "Failed to load forced-aligner model: {e}"
                     ))));
                     return;
                 }
@@ -102,9 +115,15 @@ impl InferenceEngine {
                         lang,
                         resp,
                     } => {
-                        let res = aligner
-                            .align(&samples, &transcript, lang.as_deref())
-                            .map_err(|e| CoreError::Pipeline(e.to_string()));
+                        let res = if let Some(ref al) = aligner {
+                            al.align(&samples, &transcript, lang.as_deref())
+                                .map_err(|e| CoreError::Pipeline(e.to_string()))
+                        } else {
+                            Err(CoreError::Pipeline(
+                                "Forced aligner model was not loaded (segment-mode is 'none')"
+                                    .into(),
+                            ))
+                        };
                         let _ = resp.send(res);
                     }
                 }
