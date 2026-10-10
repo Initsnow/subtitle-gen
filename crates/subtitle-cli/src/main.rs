@@ -248,7 +248,7 @@ impl StreamDisplay {
         Arc::new(move |token: &str| {
             if let Ok(mut s) = state.lock() {
                 let now = std::time::Instant::now();
-                if now.duration_since(s.last_token_time) > std::time::Duration::from_millis(1500) {
+                if now.duration_since(s.last_token_time) > std::time::Duration::from_secs(10) {
                     s.content.clear();
                     s.token_count = 0;
                     s.start_time = now;
@@ -294,7 +294,11 @@ fn create_progress_reporter() -> ProgressReporter {
 
     let sp = spinner.clone();
     let cb = Arc::new(move |msg: &str| {
-        sp.set_message(msg.to_string());
+        if let Some(preview) = msg.strip_prefix("preview: ") {
+            sp.println(preview);
+        } else {
+            sp.set_message(msg.to_string());
+        }
     });
 
     (spinner, cb)
@@ -625,7 +629,11 @@ async fn cmd_proofread(args: ProofreadArgs) -> Result<(), Box<dyn std::error::Er
 
     let llm = SubtitleLlm::new(config.llm.clone());
     let proofread_items = llm
-        .proofread(&items, Some(stream_display.callback("LLM proofread")))
+        .proofread(
+            &items,
+            Some(stream_display.callback("LLM proofread")),
+            Some(Arc::clone(&progress)),
+        )
         .await?;
 
     let out_path = args.out.unwrap_or_else(|| {
@@ -674,6 +682,7 @@ async fn cmd_translate(args: TranslateArgs) -> Result<(), Box<dyn std::error::Er
             &items,
             &args.target,
             Some(stream_display.callback("LLM translate")),
+            Some(Arc::clone(&progress)),
         )
         .await?;
 

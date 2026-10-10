@@ -131,6 +131,7 @@ impl SubtitleLlm {
         &self,
         items: &[SubtitleItem],
         on_token: Option<StreamCallback>,
+        progress: Option<StreamCallback>,
     ) -> Result<Vec<SubtitleItem>> {
         if items.is_empty() {
             return Ok(Vec::new());
@@ -143,8 +144,18 @@ impl SubtitleLlm {
             self.config.batch_size
         };
 
+        let total_batches = items.len().div_ceil(batch_size);
         let mut result = items.to_vec();
-        for chunk in result.chunks_mut(batch_size) {
+        for (b_idx, chunk) in result.chunks_mut(batch_size).enumerate() {
+            if let Some(ref p) = progress {
+                p(&format!(
+                    "proofreading batch {}/{} ({} cues) with LLM",
+                    b_idx + 1,
+                    total_batches,
+                    chunk.len()
+                ));
+            }
+
             let chunk_items: Vec<serde_json::Value> = chunk
                 .iter()
                 .map(|item| serde_json::json!({ "i": item.id, "t": item.text }))
@@ -175,6 +186,15 @@ impl SubtitleLlm {
                     item.proofread = Some(corr.clone());
                 }
             }
+
+            if let Some(ref p) = progress {
+                p(&format!(
+                    "preview: [LLM proofread batch {}/{} done, {} correction(s)]",
+                    b_idx + 1,
+                    total_batches,
+                    corrections.len()
+                ));
+            }
         }
 
         Ok(result)
@@ -186,6 +206,7 @@ impl SubtitleLlm {
         items: &[SubtitleItem],
         target_language: &str,
         on_token: Option<StreamCallback>,
+        progress: Option<StreamCallback>,
     ) -> Result<Vec<SubtitleItem>> {
         if items.is_empty() {
             return Ok(Vec::new());
@@ -198,8 +219,19 @@ impl SubtitleLlm {
             self.config.batch_size
         };
 
+        let total_batches = items.len().div_ceil(batch_size);
         let mut result = items.to_vec();
-        for chunk in result.chunks_mut(batch_size) {
+        for (b_idx, chunk) in result.chunks_mut(batch_size).enumerate() {
+            if let Some(ref p) = progress {
+                p(&format!(
+                    "translating batch {}/{} ({} cues) to {} with LLM",
+                    b_idx + 1,
+                    total_batches,
+                    chunk.len(),
+                    target_language
+                ));
+            }
+
             let expected_ids: Vec<usize> = chunk.iter().map(|item| item.id).collect();
             let chunk_items: Vec<serde_json::Value> = chunk
                 .iter()
@@ -234,6 +266,15 @@ impl SubtitleLlm {
                 if let Some(trans) = translations.get(&item.id) {
                     item.translation = Some(trans.clone());
                 }
+            }
+
+            if let Some(ref p) = progress {
+                p(&format!(
+                    "preview: [LLM translate batch {}/{} done, {} cue(s)]",
+                    b_idx + 1,
+                    total_batches,
+                    chunk.len()
+                ));
             }
         }
 

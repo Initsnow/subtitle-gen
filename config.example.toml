@@ -4,10 +4,10 @@
 cache_dir = ".subtitle-gen-cache"
 
 [model]
-# GGUF 模型配置：支持别名规范、本地 .gguf 路径或 "org/repo[:file.gguf]"
+# GGUF 模型配置：支持预置别名 (如 "qwen3-asr-0.6b-q4_k"、"qwen3")、本地 .gguf 路径或 "org/repo[:file.gguf]"
 asr_model = "qwen3-asr-0.6b-q4_k"
 aligner_model = "qwen3-forced-aligner-0.6b-q4_k"
-quant = "q4_k"
+# quant = "q4_k"         # 量化兜底：仅当使用 Hugging Face 仓库 ID 且未带文件名时用于拼接文件名
 # n_threads = 0          # CPU 线程数；0 = 自动根据逻辑核心数推导
 # gpu_layers = 0         # 卸载到 GPU 的层数；省略则自动全量卸载，0 = 仅 CPU 计算
 # language = "zh"        # 语音识别语言提示 ("zh", "ja", "en" 等)
@@ -44,14 +44,14 @@ max_media_entries = 12
 
 [llm]
 # 仅在使用 --proofread 或 --translate 时调用
-model = "deepseek-v4-pro"
+model = "deepseek-chat"
 base_url = "https://api.deepseek.com/v1"
 api_key = ""
 timeout = 120.0
 max_retries = 2
-temperature = 0.5
-batch_size = 3000
-concurrency = 400
+temperature = 0.3
+batch_size = 40
+concurrency = 2
 
 [output]
 default_formats = ["srt"]

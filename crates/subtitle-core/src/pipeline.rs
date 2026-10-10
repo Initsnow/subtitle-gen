@@ -252,6 +252,18 @@ impl<B: InferenceBackend + 'static> SubtitlePipeline<B> {
                     }
                 };
 
+                if !transcript.trim().is_empty() {
+                    report(
+                        &progress,
+                        &format!(
+                            "preview: [{:.1}s - {:.1}s] {}",
+                            window.start,
+                            window.end,
+                            transcript.trim()
+                        ),
+                    );
+                }
+
                 // 2. Alignment
                 let local_tokens = if with_alignment && !transcript.trim().is_empty() {
                     report(
@@ -393,14 +405,23 @@ impl<B: InferenceBackend + 'static> SubtitlePipeline<B> {
                 let llm = SubtitleLlm::new(self.config.llm.clone());
                 report(&options.progress, "proofreading subtitles with LLM");
                 subtitles = llm
-                    .proofread(&subtitles, options.stream_token.clone())
+                    .proofread(
+                        &subtitles,
+                        options.stream_token.clone(),
+                        options.progress.clone(),
+                    )
                     .await?;
                 report(
                     &options.progress,
                     &format!("translating subtitles to {target_lang} with LLM"),
                 );
                 subtitles = llm
-                    .translate(&subtitles, &target_lang, options.stream_token.clone())
+                    .translate(
+                        &subtitles,
+                        &target_lang,
+                        options.stream_token.clone(),
+                        options.progress.clone(),
+                    )
                     .await?;
                 report(&options.progress, "LLM translation complete");
             } else {
@@ -528,6 +549,15 @@ impl<B: InferenceBackend + 'static> SubtitlePipeline<B> {
             }
 
             if !transcript.trim().is_empty() {
+                report(
+                    &progress,
+                    &format!(
+                        "preview: [{:.1}s - {:.1}s] {}",
+                        window.start,
+                        window.end,
+                        transcript.trim()
+                    ),
+                );
                 report(
                     &progress,
                     &format!("window {chunk_num}/{total_windows}: forced alignment"),

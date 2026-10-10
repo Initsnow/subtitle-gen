@@ -77,7 +77,7 @@ jobs:
           Copy-Item "README.md" $stage
           Copy-Item "LICENSE" $stage
           Copy-Item "config.example.toml" $stage
-          $archive = "subtitle-gen-${{ matrix.target }}.zip"
+          $archive = "subtitle-gen-${{ matrix.target }}-cuda.zip"
           Compress-Archive -Path "$stage\*" -DestinationPath $archive
           echo "ARCHIVE_PATH=$archive" >> $env:GITHUB_ENV
 
@@ -91,7 +91,7 @@ jobs:
             cp -P "$CRISPASR_LIB_DIR"/*.so* "$stage/" 2>/dev/null || true
           fi
           cp README.md LICENSE config.example.toml "$stage/"
-          archive="subtitle-gen-${{ matrix.target }}.tar.gz"
+          archive="subtitle-gen-${{ matrix.target }}-cuda.tar.gz"
           tar -czf "$archive" -C "$stage" .
           echo "ARCHIVE_PATH=$archive" >> $GITHUB_ENV
 
