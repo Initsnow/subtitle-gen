@@ -1,0 +1,22 @@
+[package]
+name = "subtitle-cli"
+description = "Command-line entry point for subtitle-gen."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[[bin]]
+name = "subtitle-gen"
+path = "src/main.rs"
+
+[dependencies]
+clap.workspace = true
+subtitle-core.workspace = true
+subtitle-infer = { workspace = true, features = ["native"] }
+indicatif.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+tokio.workspace = true
+serde_json.workspace = true

@@ -1,17 +1,19 @@
-# Minimal configuration. Advanced defaults are shown commented out so normal use stays simple.
+# subtitle-gen 配置文件示例
+# 默认配置开箱即用，高级参数取消注释即可自定义。
+
 cache_dir = ".subtitle-gen-cache"
 
 [model]
-asr_model = "Qwen/Qwen3-ASR-0.6B-hf"
-aligner_model = "Qwen/Qwen3-ForcedAligner-0.6B-hf"
-device_map = "auto"
-dtype = "auto"
-# language = "English"
+# GGUF 模型配置：支持别名规范、本地 .gguf 路径或 "org/repo[:file.gguf]"
+asr_model = "qwen3-asr-0.6b-q4_k"
+aligner_model = "qwen3-forced-aligner-0.6b-q4_k"
+quant = "q4_k"
+# n_threads = 0          # CPU 线程数；0 = 自动根据逻辑核心数推导
+# gpu_layers = 0         # 卸载到 GPU 的层数；省略则自动全量卸载，0 = 仅 CPU 计算
+# language = "zh"        # 语音识别语言提示 ("zh", "ja", "en" 等)
 
 [vad]
 enabled = true
-backend = "silero"
-
 # short_audio_threshold = 180.0
 # min_speech_duration = 0.25
 # min_silence_duration = 0.6
@@ -21,10 +23,8 @@ backend = "silero"
 # skip_silence_longer_than = 8.0
 
 [segment]
-mode = "hybrid"
-
-# These limits are used by mode = "local", and for deciding which local
-# segments are overlong in mode = "hybrid".
+# 断句模式：local (本地形态素与声学物理停顿切分) 或 none (不切分，直接输出 ASR 原始片段)
+mode = "local"
 # min_duration = 0.833
 # max_duration = 7.0
 # max_lines = 2
@@ -34,34 +34,25 @@ mode = "hybrid"
 # max_cps_en = 20.0
 # max_cps_zh = 9.0
 # max_cps_ja = 4.0
-# pause_threshold = 0.65
+# pause_threshold = 0.15
 
 [cache]
-enabled = true
+# 默认关闭缓存，如需开启增量断点恢复请设为 true 或使用 --cache
+enabled = false
 cleanup_enabled = true
 max_media_entries = 12
 
-[performance]
-compile_aligner = false
-compile_asr = false
-
 [llm]
+# 仅在使用 --proofread 或 --translate 时调用
 model = "deepseek-v4-pro"
 base_url = "https://api.deepseek.com/v1"
 api_key = ""
 timeout = 120.0
 max_retries = 2
 temperature = 0.5
-thinking = false
-# thinking = true
-# thinking_effort = "xhigh"
 batch_size = 3000
 concurrency = 400
 
-[llm.segmentation]
-model = "deepseek-v4-flash"
-thinking = false
-
 [output]
 default_formats = ["srt"]
-strip_punctuation = true
+# strip_punctuation = false

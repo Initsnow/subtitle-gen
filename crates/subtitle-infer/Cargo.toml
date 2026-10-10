@@ -1,0 +1,32 @@
+[package]
+name = "subtitle-infer"
+description = "Core inference engine: GGUF-backed VAD, ASR, and forced alignment over the official CrispASR Rust binding, with automatic GPU-to-CPU fallback."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+thiserror.workspace = true
+subtitle-core.workspace = true
+tracing.workspace = true
+# Official CrispASR Rust binding (safe wrapper + raw FFI). Both are optional:
+# without the `native` feature the crate compiles against a pure-Rust stub so
+# machines without a prebuilt `libcrispasr` can still build and run unit tests.
+crispasr = { version = "0.8", optional = true }
+crispasr-sys = { version = "0.8", optional = true }
+
+[features]
+default = ["native"]
+# Link the real CrispASR runtime. Requires either:
+#   A) a git dependency (build.rs of crispasr-sys cmakes libcrispasr), or
+#   B) a prebuilt libcrispasr with CRISPASR_LIB_DIR pointing at it.
+native = ["dep:crispasr", "dep:crispasr-sys"]
+# Markers for the GPU backends libcrispasr itself was built with. They do not
+# compile anything here; they shape the default backend ladder and the
+# GPU-to-CPU fallback policy (the runtime selects its backend at session open,
+# and per-session GPU budgets go through CRISPASR_N_GPU_LAYERS).
+cuda = []
+vulkan = []
+metal = []

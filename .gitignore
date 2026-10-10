@@ -1,20 +1,18 @@
-# Python-generated files
-__pycache__/
-*.py[oc]
-build/
-dist/
-wheels/
-*.egg-info
+# Rust / Cargo build artifacts
+/target/
+**/*.rs.bk
+Cargo.lock.bak
 
-# Virtual environments
-.venv
+# Local cache directories
+.subtitle-gen-cache*/
 
-# Tool caches
-.pytest_cache/
-.ruff_cache/
-.subtitle-gen-cache/
-.codex/tmp/
-.codex/work/
+# Local configuration overrides
+/config.toml
 
-# Local configuration
-config.toml
+# IDE & OS
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
