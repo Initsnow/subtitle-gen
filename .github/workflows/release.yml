@@ -43,9 +43,7 @@ jobs:
           tar -xzf $downloadPath -C $extractDir
           $libFile = Get-ChildItem -Path $extractDir -Recurse -File -Filter "crispasr.lib" | Select-Object -First 1
           $libDir = $libFile.DirectoryName
-          $sysDir = (Get-ChildItem -Path $extractDir -Directory | Select-Object -First 1).FullName
           echo "CRISPASR_LIB_DIR=$libDir" >> $env:GITHUB_ENV
-          echo "CRISPASR_SYS_LIB_DIR=$sysDir" >> $env:GITHUB_ENV
           echo "CRISPASR_EXTRACT_DIR=$extractDir" >> $env:GITHUB_ENV
 
       - name: Download CrispASR native library (Linux CUDA)
@@ -63,9 +61,6 @@ jobs:
 
       - name: Build release binary
         run: cargo build --release --target ${{ matrix.target }} -p subtitle-cli
-        env:
-          CRISPASR_LIB_DIR: ${{ env.CRISPASR_LIB_DIR }}
-          CRISPASR_SYS_LIB_DIR: ${{ env.CRISPASR_SYS_LIB_DIR }}
 
       - name: Package release artifact (Windows)
         if: runner.os == 'Windows'

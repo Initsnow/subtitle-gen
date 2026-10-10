@@ -33,17 +33,21 @@ fn copy_native_libs(src: &Path, target: &Path) {
 
 fn main() {
     println!("cargo:rerun-if-env-changed=CRISPASR_LIB_DIR");
-    println!("cargo:rerun-if-env-changed=CRISPASR_SYS_LIB_DIR");
+    println!("cargo:rerun-if-env-changed=CRISPASR_EXTRACT_DIR");
 
     let dirs = [
         env::var("CRISPASR_LIB_DIR").ok(),
-        env::var("CRISPASR_SYS_LIB_DIR").ok(),
+        env::var("CRISPASR_EXTRACT_DIR").ok(),
     ];
 
     if let Ok(out_dir) = env::var("OUT_DIR") {
         if let Some(target_dir) = Path::new(&out_dir).ancestors().nth(3) {
             for dir in dirs.into_iter().flatten() {
-                let path = Path::new(&dir);
+                let trimmed = dir.trim();
+                if trimmed.is_empty() {
+                    continue;
+                }
+                let path = Path::new(trimmed);
                 if path.is_dir() {
                     copy_native_libs(path, target_dir);
                 }
