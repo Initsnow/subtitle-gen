@@ -23,7 +23,7 @@
 
 从 [GitHub Releases](https://github.com/CrispStrobe/subtitle-gen/releases) 下载适用于对应操作系统的单可执行文件：
 - Windows: `subtitle-gen-x86_64-pc-windows-msvc.zip`
-- Linux: `subtitle-gen-x86_64-unknown-linux-gnu.tar.gz` 或 `subtitle-gen-x86_64-unknown-linux-musl.tar.gz`
+- Linux: `subtitle-gen-x86_64-unknown-linux-gnu.tar.gz`
 
 ### 2. 从源码编译
 
