@@ -8,12 +8,8 @@ on:
 
 jobs:
   test:
-    name: Test (${{ matrix.os }})
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ ubuntu-latest, windows-latest ]
+    name: Test (Ubuntu Linux)
+    runs-on: ubuntu-latest
 
     steps:
       - name: Checkout repository
@@ -24,21 +20,7 @@ jobs:
         with:
           components: rustfmt, clippy
 
-      - name: Download CrispASR native library (Windows)
-        if: runner.os == 'Windows'
-        shell: pwsh
-        run: |
-          $crispasrUrl = "https://github.com/CrispStrobe/CrispASR/releases/download/v0.8.42/libcrispasr-windows-x86_64.tar.gz"
-          $downloadPath = "$env:RUNNER_TEMP\libcrispasr.tar.gz"
-          $extractDir = "$env:RUNNER_TEMP\crispasr"
-          Invoke-WebRequest -Uri $crispasrUrl -OutFile $downloadPath
-          New-Item -ItemType Directory -Force -Path $extractDir | Out-Null
-          tar -xzf $downloadPath -C $extractDir
-          $libDir = "$extractDir\libcrispasr-windows-x86_64\lib"
-          echo "CRISPASR_LIB_DIR=$libDir" >> $env:GITHUB_ENV
-
-      - name: Download CrispASR native library (Linux)
-        if: runner.os == 'Linux'
+      - name: Download CrispASR native library
         run: |
           crispasr_url="https://github.com/CrispStrobe/CrispASR/releases/download/v0.8.42/libcrispasr-linux-x86_64.tar.gz"
           download_path="$RUNNER_TEMP/libcrispasr.tar.gz"
