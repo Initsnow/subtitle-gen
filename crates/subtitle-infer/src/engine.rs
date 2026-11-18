@@ -37,8 +37,26 @@ enum InferenceCommand {
 
 /// The unified GGUF inference engine.
 pub struct InferenceEngine {
-    tx: Mutex<Sender<InferenceCommand>>,
-    _handle: Option<JoinHandle<()>>,
+    tx: Mutex<Option<Sender<InferenceCommand>>>,
+    handle: Mutex<Option<JoinHandle<()>>>,
+}
+
+impl Drop for InferenceEngine {
+    fn drop(&mut self) {
+        // Drop the command sender so the worker thread's cmd_rx.recv() returns Err and terminates its loop.
+        if let Ok(mut tx_guard) = self.tx.lock() {
+            drop(tx_guard.take());
+        }
+        // Explicitly wait for the worker thread to finish dropping inference sessions
+        // (including CUDA context cleanup) before the main thread continues/exits.
+        // This avoids race conditions where the process begins tearing down the CUDA driver
+        // while the background thread is still invoking cudaFree.
+        if let Ok(mut handle_guard) = self.handle.lock() {
+            if let Some(handle) = handle_guard.take() {
+                let _ = handle.join();
+            }
+        }
+    }
 }
 
 impl InferenceEngine {
@@ -132,13 +150,19 @@ impl InferenceEngine {
 
         match init_rx.recv() {
             Ok(Ok(())) => Ok(Self {
-                tx: Mutex::new(cmd_tx),
-                _handle: Some(handle),
+                tx: Mutex::new(Some(cmd_tx)),
+                handle: Mutex::new(Some(handle)),
             }),
-            Ok(Err(e)) => Err(e),
-            Err(e) => Err(CoreError::Pipeline(format!(
-                "Inference worker thread initialization failed: {e}"
-            ))),
+            Ok(Err(e)) => {
+                let _ = handle.join();
+                Err(e)
+            }
+            Err(e) => {
+                let _ = handle.join();
+                Err(CoreError::Pipeline(format!(
+                    "Inference worker thread initialization failed: {e}"
+                )))
+            }
         }
     }
 }
@@ -150,10 +174,14 @@ impl InferenceBackend for InferenceEngine {
             samples: samples.to_vec(),
             resp: resp_tx,
         };
-        self.tx
+        let tx = self
+            .tx
             .lock()
             .map_err(|e| CoreError::Pipeline(e.to_string()))?
-            .send(cmd)
+            .as_ref()
+            .ok_or_else(|| CoreError::Pipeline("Inference engine has been shut down".into()))?
+            .clone();
+        tx.send(cmd)
             .map_err(|e| CoreError::Pipeline(e.to_string()))?;
 
         resp_rx
@@ -172,10 +200,14 @@ impl InferenceBackend for InferenceEngine {
             hint: language_hint.map(String::from),
             resp: resp_tx,
         };
-        self.tx
+        let tx = self
+            .tx
             .lock()
             .map_err(|e| CoreError::Pipeline(e.to_string()))?
-            .send(cmd)
+            .as_ref()
+            .ok_or_else(|| CoreError::Pipeline("Inference engine has been shut down".into()))?
+            .clone();
+        tx.send(cmd)
             .map_err(|e| CoreError::Pipeline(e.to_string()))?;
 
         resp_rx
@@ -196,10 +228,14 @@ impl InferenceBackend for InferenceEngine {
             lang: language.map(String::from),
             resp: resp_tx,
         };
-        self.tx
+        let tx = self
+            .tx
             .lock()
             .map_err(|e| CoreError::Pipeline(e.to_string()))?
-            .send(cmd)
+            .as_ref()
+            .ok_or_else(|| CoreError::Pipeline("Inference engine has been shut down".into()))?
+            .clone();
+        tx.send(cmd)
             .map_err(|e| CoreError::Pipeline(e.to_string()))?;
 
         resp_rx

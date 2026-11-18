@@ -98,10 +98,10 @@ fn default_speech_padding() -> f64 {
     0.25
 }
 fn default_max_chunk_duration() -> f64 {
-    120.0
+    25.0
 }
 fn default_hard_max_chunk_duration() -> f64 {
-    240.0
+    45.0
 }
 fn default_skip_silence_longer_than() -> f64 {
     8.0

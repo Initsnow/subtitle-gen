@@ -2157,9 +2157,10 @@ dependencies = [
 
 [[package]]
 name = "subtitle-cli"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "clap",
+ "console",
  "indicatif",
  "serde_json",
  "subtitle-core",
@@ -2171,7 +2172,7 @@ dependencies = [
 
 [[package]]
 name = "subtitle-core"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "async-openai",
  "dirs",
@@ -2195,7 +2196,7 @@ dependencies = [
 
 [[package]]
 name = "subtitle-infer"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "crispasr",
  "crispasr-sys",

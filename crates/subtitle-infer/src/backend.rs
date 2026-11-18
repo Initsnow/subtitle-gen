@@ -158,7 +158,7 @@ mod imp {
         // read-only buffer, and the result handle (if any) is read via the
         // accessors below and then released with `crispasr_align_result_free`.
         unsafe {
-            let result = crispasr_sys::crispasr_align_words_abi(
+            let mut result = crispasr_sys::crispasr_align_words_abi(
                 model_c.as_ptr(),
                 transcript_c.as_ptr(),
                 samples.as_ptr(),
@@ -166,6 +166,19 @@ mod imp {
                 t_offset_cs,
                 n_threads,
             );
+            if result.is_null() {
+                // If GPU alignment failed (e.g. CUDA out of memory), retry on CPU.
+                tracing::warn!("GPU forced alignment failed; falling back to CPU");
+                std::env::set_var(GPU_ENV_VAR, "0");
+                result = crispasr_sys::crispasr_align_words_abi(
+                    model_c.as_ptr(),
+                    transcript_c.as_ptr(),
+                    samples.as_ptr(),
+                    samples.len() as i32,
+                    t_offset_cs,
+                    n_threads,
+                );
+            }
             if result.is_null() {
                 return Err(InferError::Runtime {
                     code: -5,

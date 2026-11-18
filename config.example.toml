@@ -18,8 +18,8 @@ enabled = true
 # min_speech_duration = 0.25
 # min_silence_duration = 0.6
 # speech_padding = 0.25
-# max_chunk_duration = 120.0
-# hard_max_chunk_duration = 240.0
+# max_chunk_duration = 30.0
+# hard_max_chunk_duration = 60.0
 # skip_silence_longer_than = 8.0
 
 [segment]

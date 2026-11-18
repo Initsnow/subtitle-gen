@@ -355,24 +355,43 @@ impl<B: InferenceBackend + 'static> SubtitlePipeline<B> {
             });
 
             if segment_mode != "none" {
+                let mut items = Vec::new();
                 if let Some(ref local_toks) = pw.local_tokens {
-                    let global_tokens: Vec<TimedToken> = local_toks
-                        .iter()
-                        .map(|t| t.shifted(pw.window.start))
-                        .collect();
+                    if !local_toks.is_empty() {
+                        let global_tokens: Vec<TimedToken> = local_toks
+                            .iter()
+                            .map(|t| t.shifted(pw.window.start))
+                            .collect();
 
-                    let items = segmenter.segment(
-                        &global_tokens,
-                        Some(&pw.transcript),
-                        pw.language.as_deref().or(detected_language.as_deref()),
-                    );
-                    segmented_subtitles.extend(items);
+                        items = segmenter.segment(
+                            &global_tokens,
+                            Some(&pw.transcript),
+                            pw.language.as_deref().or(detected_language.as_deref()),
+                        );
+                    }
                 }
+                // Fallback: if alignment failed or returned no tokens, but there is transcript text,
+                // generate a subtitle from the window itself so the transcription is never lost.
+                if items.is_empty() && !pw.transcript.trim().is_empty() {
+                    items.push(SubtitleItem {
+                        id: 0,
+                        start: pw.window.start,
+                        end: pw.window.end,
+                        text: pw.transcript.trim().to_string(),
+                        translation: None,
+                        proofread: None,
+                    });
+                }
+                segmented_subtitles.extend(items);
             }
         }
 
         let mut subtitles = if segment_mode != "none" {
-            segmented_subtitles
+            if segmented_subtitles.is_empty() && !chunks.is_empty() {
+                subtitles_from_chunks(&chunks)
+            } else {
+                segmented_subtitles
+            }
         } else {
             subtitles_from_chunks(&chunks)
         };

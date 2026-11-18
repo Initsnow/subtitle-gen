@@ -588,6 +588,7 @@ async fn cmd_pipeline(args: PipelineArgs) -> Result<(), Box<dyn std::error::Erro
     }
 
     spinner.finish_and_clear();
+    drop(pipeline);
 
     if !failures.is_empty() {
         eprintln!(
@@ -779,6 +780,7 @@ async fn cmd_align(args: AlignArgs) -> Result<(), Box<dyn std::error::Error>> {
     }
 
     spinner.finish_and_clear();
+    drop(pipeline);
     println!("{}", out_path.display());
     Ok(())
 }
